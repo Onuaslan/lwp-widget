@@ -101,7 +101,7 @@ object WidgetRenderer {
         val date = LocalDate.now().minusDays(offset.toLong())
         val day = storage.consumption(date.toString())
 
-        views.setTextViewText(R.id.title, status?.name ?: storage.selectedPump?.name ?: "LWP")
+        views.setTextViewText(R.id.title, "Panasonic")
         views.setTextViewText(R.id.date, date.format(dateFormat))
         views.setTextViewText(R.id.total_date, date.format(dateFormat))
         views.setViewVisibility(R.id.next, if (offset > 0) View.VISIBLE else View.INVISIBLE)
