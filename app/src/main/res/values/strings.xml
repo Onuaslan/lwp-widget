@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LWP Widget</string>
+    <string name="widget_name">Wärmepumpe – Tagesverbrauch</string>
+    <string name="widget_description">Stündlicher Verbrauch wie im Comfort-Cloud-Monitor, dazu Außen- und Vorlauftemperatur live</string>
+</resources>
