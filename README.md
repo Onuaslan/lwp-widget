@@ -4,6 +4,7 @@ Ein Startbildschirm-Widget im Look des Comfort-Cloud-Monitors (Ansicht „Tag“
 
 - **Stündlicher Stromverbrauch** als Balken, gestapelt nach Warmwasser (rot), Heizen (orange) und Kühlen (blau), mit Tagessumme in kWh
 - **Live-Werte:** Außentemperatur, Vorlauftemperatur und was die Pumpe gerade macht: *Heizt*, *Warmwasser*, *Taut ab*, *Bereit* oder *Aus*
+- Tippen aufs Widget öffnet die Comfort-Cloud-App, Tippen auf den Namen öffnet die Steuer-App
 - Mit ‹ › zu den Vortagen blättern (bis 13 Tage zurück), ⟳ zum sofortigen Aktualisieren
 - Automatische Aktualisierung alle 15 Minuten (das ist das Minimum, das Android erlaubt)
 

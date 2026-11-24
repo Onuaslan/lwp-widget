@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.RemoteViews
 import de.onur.aquarea.api.Activity
+import de.onur.aquarea.api.ComfortCloudClient
 import de.onur.aquarea.api.activity
 import java.text.SimpleDateFormat
 import java.time.LocalDate
@@ -155,11 +156,19 @@ object WidgetRenderer {
         views.setOnClickPendingIntent(R.id.updated, broadcast(context, id, LwpWidgetProvider.ACTION_REFRESH))
         views.setOnClickPendingIntent(R.id.prev, broadcast(context, id, LwpWidgetProvider.ACTION_PREV))
         views.setOnClickPendingIntent(R.id.next, broadcast(context, id, LwpWidgetProvider.ACTION_NEXT))
-        val open = PendingIntent.getActivity(
-            context, 0, Intent(context, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        // Tippen aufs Widget öffnet die Comfort-Cloud-App (falls installiert), der Name öffnet diese App
+        val ownApp = Intent(context, MainActivity::class.java)
+        val comfortCloud = context.packageManager
+            .getLaunchIntentForPackage(ComfortCloudClient.COMFORT_CLOUD_PACKAGE)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        views.setOnClickPendingIntent(
+            R.id.root,
+            PendingIntent.getActivity(context, 0, comfortCloud ?: ownApp, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE),
         )
-        views.setOnClickPendingIntent(R.id.root, open)
+        views.setOnClickPendingIntent(
+            R.id.title,
+            PendingIntent.getActivity(context, 1, ownApp, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE),
+        )
 
         manager.updateAppWidget(id, views)
     }
