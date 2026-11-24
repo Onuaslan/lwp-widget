@@ -13,11 +13,10 @@ Dazu gibt es eine kleine App: Anmeldung mit der Panasonic-ID, Auswahl der Wärme
 
 ## Installieren
 
-1. Repository auf GitHub hochladen. Der Workflow **„APK bauen“** (`.github/workflows/build.yml`) läuft automatisch.
-2. In GitHub unter **Actions → letzter Lauf → Artifacts** die Datei `LWP-Widget-APK` laden und entpacken.
-3. Die APK aufs Handy kopieren und öffnen (einmalig „Apps aus dieser Quelle zulassen“ erlauben).
-4. App öffnen, mit E-Mail und Passwort der Comfort-Cloud-App anmelden.
-5. Widget hinzufügen: lange auf den Startbildschirm drücken → Widgets → „LWP Widget“.
+1. Auf dem Handy https://github.com/Onuaslan/lwp-widget/releases/latest öffnen und `LWP-Widget.apk` laden. Die Datei baut GitHub bei jeder Änderung automatisch neu.
+2. Die APK öffnen (einmalig „Apps aus dieser Quelle zulassen“ erlauben).
+3. App öffnen, mit E-Mail und Passwort der Comfort-Cloud-App anmelden.
+4. Widget hinzufügen: lange auf den Startbildschirm drücken → Widgets → „LWP Widget“.
 
 Hinweis: Die APK ist mit einem Debug-Schlüssel signiert, den GitHub bei jedem Lauf neu erzeugt. Für ein Update die alte App vorher deinstallieren (oder einen eigenen Schlüssel als Secret hinterlegen).
 
