@@ -152,7 +152,7 @@ class ComfortCloudClient(
             Request.Builder().url("$baseAuth/usernamepassword/login")
                 .header("Auth0-Client", AUTH0_CLIENT)
                 .header("User-Agent", API_UA)
-                .post(loginBody.toString().toRequestBody(JSON))
+                .post(loginBody.toString().jsonBody())
                 .build()
         ).execute().use { r ->
             if (r.code == 400 || r.code == 401 || r.code == 403) {
@@ -187,7 +187,7 @@ class ComfortCloudClient(
             Request.Builder().url("$baseAuth/oauth/token")
                 .header("Auth0-Client", AUTH0_CLIENT)
                 .header("User-Agent", API_UA)
-                .post(body.toString().toRequestBody(JSON))
+                .post(body.toString().jsonBody())
                 .build()
         ).execute().use { r ->
             if (r.code in 400..403) throw NeedsLoginException("Token abgelehnt (HTTP ${r.code})")
@@ -221,7 +221,7 @@ class ComfortCloudClient(
             http.newCall(
                 Request.Builder().url("$baseAcc/auth/v2/login")
                     .headers(accHeaders(session, includeClientId = false))
-                    .post("""{"language":0}""".toRequestBody(JSON))
+                    .post("""{"language":0}""".jsonBody())
                     .build()
             ).execute().use { r ->
                 val body = r.body?.string().orEmpty()
@@ -430,7 +430,7 @@ class ComfortCloudClient(
             val request = Request.Builder().url(url)
                 .headers(accHeaders(session, includeClientId = true))
                 .apply { extraHeaders.forEach { (k, v) -> header(k, v) } }
-                .method(method, body?.toString()?.toRequestBody(JSON))
+                .method(method, body?.toString()?.jsonBody())
                 .build()
             http.newCall(request).execute().use { r ->
                 val text = r.body?.string().orEmpty()
@@ -443,7 +443,7 @@ class ComfortCloudClient(
                         session = session(forceRefresh = true)
                         lastError = NeedsLoginException("Nicht angemeldet (HTTP ${r.code})")
                     }
-                    !r.isSuccessful -> throw ComfortCloudException("HTTP ${r.code} bei $url: ${text.take(300)}")
+                    !r.isSuccessful -> throw ComfortCloudException("HTTP ${r.code} bei /${url.toHttpUrl().encodedPath.trimStart('/')} (App-Version ${currentAppVersion()}): ${text.take(300)}")
                     else -> {
                         val json = if (text.isBlank()) JsonObject(emptyMap()) else Json.parseToJsonElement(text)
                         checkApiErrors(json)
@@ -608,6 +608,12 @@ class ComfortCloudClient(
         /** "4.3.0 (123)" oder "4.3.0-release" → "4.3.0" */
         fun normalizeVersion(v: String): String =
             Regex("""\d+\.\d+\.\d+""").find(v)?.value ?: v
+
+        /**
+         * JSON-Body mit exakt `Content-Type: application/json`. Die String-Variante von OkHttp hängt
+         * "; charset=utf-8" an, was die Aquarea-Schnittstelle mit Code 4000 ablehnt.
+         */
+        private fun String.jsonBody() = toByteArray(Charsets.UTF_8).toRequestBody(JSON)
 
         private fun sha256(b: ByteArray) = MessageDigest.getInstance("SHA-256").digest(b)
 

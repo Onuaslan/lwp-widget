@@ -120,6 +120,9 @@ class ComfortCloudClientTest {
 
         val transfer = Json.parseToJsonElement(requests.last { it.path == "/remote/v1/app/common/transfer" }.body.readUtf8())
         assertEquals("\"/remote/v1/api/devices?gwid=HP1&deviceDirect=1\"", transfer.jsonObject["apiName"].toString())
+        val transferRequest = requests.last { it.path == "/remote/v1/app/common/transfer" }
+        assertEquals("application/json", transferRequest.getHeader("Content-Type"))
+        assertEquals("CID", transferRequest.getHeader("X-Client-Id"))
     }
 
     @Test
