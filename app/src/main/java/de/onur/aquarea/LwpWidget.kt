@@ -110,7 +110,8 @@ object WidgetRenderer {
         views.setTextViewText(R.id.outdoor, status?.outdoorTemperature?.let { "$it °C" } ?: "–")
         views.setTextViewText(R.id.flow, status?.flowTemperature?.let { "$it °C" } ?: "–")
         val activity = status?.activity
-        views.setTextViewText(R.id.activity, activity?.label ?: "–")
+        // Im Widget ist wenig Platz: Warmwasser als „WW“ abkürzen
+        views.setTextViewText(R.id.activity, if (activity == Activity.HOT_WATER) "WW" else activity?.label ?: "–")
         views.setImageViewResource(
             R.id.activity_dot,
             when (activity) {
