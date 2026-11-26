@@ -40,13 +40,13 @@ object ChartRenderer {
         val grid = Paint().apply { color = COLOR_GRID; strokeWidth = max(1f, dp(0.8f)) }
 
         // Ränder: links Platz für Achsenwerte, oben für "kWh", unten für Stunden
-        val left = dp(22f)
+        val left = dp(26f)
         val right = w - dp(6f)
-        val top = dp(20f)
+        val top = dp(16f)
         val bottom = h - dp(20f)
 
-        c.drawText("kWh", dp(2f), dp(10f), small.apply { textSize = dp(10f) })
-        small.textSize = dp(9f)
+        c.drawText("kWh", left, top - dp(5f), small.apply { textSize = dp(10f) })
+        small.textSize = dp(10f)
 
         val hours = day?.hours.orEmpty()
         val maxValue = hours.maxOfOrNull { it.total } ?: 0.0
@@ -57,8 +57,14 @@ object ChartRenderer {
         while (v <= yMax + 1e-9) {
             val y = (bottom - (v / yMax) * (bottom - top)).toFloat()
             c.drawLine(left, y, right, y, grid)
-            val label = if (step < 1) "%.1f".format(v) else v.toInt().toString()
-            c.drawText(label, dp(4f), y + dp(3f), small)
+            val label = when {
+                step < 0.5 -> String.format(java.util.Locale.US, "%.2f", v).trimEnd('0').trimEnd('.')
+                step < 1 -> String.format(java.util.Locale.US, "%.1f", v).removeSuffix(".0")
+                else -> v.toInt().toString()
+            }
+            small.textAlign = Paint.Align.RIGHT
+            c.drawText(label, left - dp(5f), y + dp(3.5f), small)
+            small.textAlign = Paint.Align.LEFT
             v += step
         }
 
@@ -110,15 +116,13 @@ object ChartRenderer {
         return bmp
     }
 
-    /** Achsenmaximum und Schrittweite, ähnlich wie die App (0 / 1 / 2 kWh …). */
+    /** Achsenmaximum und Schrittweite: 2–4 „schöne“ Schritte, damit die Balken die Höhe gut nutzen. */
     internal fun scale(maxValue: Double): Pair<Double, Double> {
         if (maxValue <= 0.0) return 2.0 to 1.0
-        if (maxValue <= 1.0) return 1.0 to 0.5
-        val top = ceil(maxValue)
-        return when {
-            top <= 4 -> top to 1.0
-            top <= 8 -> (ceil(top / 2) * 2) to 2.0
-            else -> (ceil(top / 5) * 5) to 5.0
+        for (step in listOf(0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0)) {
+            val steps = ceil(maxValue * 1.05 / step)
+            if (steps <= 4) return (maxOf(steps, 2.0) * step) to step
         }
+        return ceil(maxValue / 100) * 100 to 100.0
     }
 }

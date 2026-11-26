@@ -154,8 +154,9 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Legende wie in der App: Warmwasser, Heizen, Kühlen -->
+    <!-- Legende wie in der App: Warmwasser, Heizen, Kühlen (bei wenig Höhe ausgeblendet) -->
     <LinearLayout
+        android:id="@+id/legend"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
@@ -239,34 +240,50 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Stunden-Balkendiagramm (als Bild gezeichnet) -->
+    <!-- Stunden-Balkendiagramm (als Bild in genau passender Größe gezeichnet) -->
     <ImageView
         android:id="@+id/chart"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="6dp"
         android:layout_weight="1"
         android:contentDescription="Stündlicher Verbrauch"
-        android:scaleType="fitXY" />
+        android:scaleType="fitCenter" />
 
-    <!-- Tagessumme -->
+    <!-- Fußzeile: Datum + Aktualisiert links, Tagessumme, großer Aktualisieren-Knopf rechts unten -->
     <LinearLayout
+        android:id="@+id/footer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="bottom"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp">
+        android:paddingStart="4dp">
 
-        <TextView
-            android:id="@+id/total_date"
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="3dp"
             android:layout_weight="1"
-            android:text="24 11 2026"
-            android:textColor="@color/text_primary"
-            android:textSize="13sp" />
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/total_date"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="24 11 2026"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/updated"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="Tippen zum Aktualisieren"
+                android:textColor="@color/text_secondary"
+                android:textSize="10sp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/total"
@@ -281,44 +298,15 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="3dp"
-            android:layout_marginBottom="3dp"
+            android:layout_marginEnd="10dp"
             android:text="kWh"
             android:textColor="@color/text_primary"
             android:textSize="13sp" />
-    </LinearLayout>
-
-    <ImageView
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginStart="6dp"
-        android:layout_marginEnd="6dp"
-        android:src="@color/divider" />
-
-    <!-- Fußzeile: die ganze Zeile aktualisiert, rechts ein großer Knopf -->
-    <LinearLayout
-        android:id="@+id/footer"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="6dp">
-
-        <TextView
-            android:id="@+id/updated"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:text="Tippen zum Aktualisieren"
-            android:textColor="@color/text_secondary"
-            android:textSize="10sp" />
 
         <ImageView
             android:id="@+id/refresh"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:layout_marginTop="2dp"
             android:background="@drawable/refresh_bg"
             android:contentDescription="Aktualisieren"
             android:padding="9dp"

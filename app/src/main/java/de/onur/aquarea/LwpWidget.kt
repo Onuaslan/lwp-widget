@@ -10,7 +10,10 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
+import android.util.SizeF
 import android.view.View
 import android.widget.RemoteViews
 import de.onur.aquarea.api.Activity
@@ -92,10 +95,45 @@ class LwpWidgetProvider : AppWidgetProvider() {
 object WidgetRenderer {
     private val dateFormat = DateTimeFormatter.ofPattern("dd MM yyyy")
 
+    /** Höhe aller Elemente außer dem Diagramm (dp), mit und ohne Legende. */
+    private const val CHROME_DP = 152
+    private const val LEGEND_DP = 28
+    private const val MIN_CHART_DP = 110
+
     fun render(context: Context, manager: AppWidgetManager, id: Int, refreshing: Boolean = false) {
         if (id == AppWidgetManager.INVALID_APPWIDGET_ID) return
+        val options = manager.getAppWidgetOptions(id)
+
+        // Ab Android 12 meldet der Launcher die genauen Größen (Hoch- und Querformat).
+        // Dann bekommt jede Größe ihr eigenes, exakt passendes Diagramm.
+        if (Build.VERSION.SDK_INT >= 31) {
+            val sizes: List<SizeF>? = if (Build.VERSION.SDK_INT >= 33) {
+                options.getParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES, SizeF::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+            }
+            if (!sizes.isNullOrEmpty()) {
+                val distinct = sizes.distinctBy { it.width.roundToInt() to it.height.roundToInt() }.take(4)
+                val map = distinct.associateWith { buildViews(context, id, it.width.roundToInt(), it.height.roundToInt(), refreshing) }
+                manager.updateAppWidget(id, RemoteViews(map))
+                return
+            }
+        }
+
+        // Ältere Launcher: Hochformat = minWidth × maxHeight, Querformat = maxWidth × minHeight
+        val landscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        fun opt(key: String, fallback: Int) = options.getInt(key, fallback).takeIf { it > 0 } ?: fallback
+        val widthDp = if (landscape) opt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 400) else opt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 300)
+        val heightDp = if (landscape) opt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 200) else opt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 300)
+        manager.updateAppWidget(id, buildViews(context, id, widthDp, heightDp, refreshing))
+    }
+
+    private fun buildViews(context: Context, id: Int, widthDp: Int, heightDp: Int, refreshing: Boolean): RemoteViews {
         val storage = Storage(context)
-        val views = RemoteViews(context.packageName, R.layout.widget_lwp)
+        // Flach und breit (z.B. Querformat): Live-Werte links, Diagramm rechts
+        val wide = heightDp < 230 && widthDp >= heightDp * 1.7f
+        val views = RemoteViews(context.packageName, if (wide) R.layout.widget_lwp_wide else R.layout.widget_lwp)
         val status = storage.status
         val offset = storage.dayOffset(id)
         val date = LocalDate.now().minusDays(offset.toLong())
@@ -123,15 +161,20 @@ object WidgetRenderer {
             }
         )
 
-        // Diagramm passend zur Widgetgröße zeichnen
-        val options = manager.getAppWidgetOptions(id)
+        // Legende nur, wenn das Diagramm trotzdem genug Höhe behält (sonst z.B. im Querformat ausblenden)
+        val showLegend = if (wide) heightDp - 18 - 26 >= 90 else heightDp - CHROME_DP - LEGEND_DP >= MIN_CHART_DP
+        views.setViewVisibility(R.id.legend, if (showLegend) View.VISIBLE else View.GONE)
+
+        // Diagramm in genau der verfügbaren Größe zeichnen, damit nichts gestaucht wird
         val density = context.resources.displayMetrics.density
-        val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 300).takeIf { it > 0 } ?: 300
-        val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 260).takeIf { it > 0 } ?: 260
-        val chartWidthDp = widthDp - 28
-        val chartHeightDp = max(70, heightDp - 190)
+        val chartWidthDp = max(120, if (wide) widthDp - 26 - 132 - 10 else widthDp - 28)
+        val chartHeightDp = if (wide) {
+            max(60, heightDp - 18 - 4 - (if (showLegend) 22 else 0))
+        } else {
+            max(64, heightDp - CHROME_DP - (if (showLegend) LEGEND_DP else 0))
+        }
         // Bitmaps in RemoteViews sind in der Größe begrenzt – Auflösung notfalls reduzieren
-        val scale = min(density, 1100f / chartWidthDp)
+        val scale = min(density, 1000f / chartWidthDp)
         val bitmap = ChartRenderer.render(
             day,
             (chartWidthDp * scale).roundToInt(),
@@ -154,7 +197,6 @@ object WidgetRenderer {
 
         // Klicks
         views.setOnClickPendingIntent(R.id.refresh, broadcast(context, id, LwpWidgetProvider.ACTION_REFRESH))
-        views.setOnClickPendingIntent(R.id.updated, broadcast(context, id, LwpWidgetProvider.ACTION_REFRESH))
         views.setOnClickPendingIntent(R.id.footer, broadcast(context, id, LwpWidgetProvider.ACTION_REFRESH))
         views.setOnClickPendingIntent(R.id.prev, broadcast(context, id, LwpWidgetProvider.ACTION_PREV))
         views.setOnClickPendingIntent(R.id.next, broadcast(context, id, LwpWidgetProvider.ACTION_NEXT))
@@ -171,8 +213,7 @@ object WidgetRenderer {
             R.id.title,
             PendingIntent.getActivity(context, 1, ownApp, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE),
         )
-
-        manager.updateAppWidget(id, views)
+        return views
     }
 
     private fun broadcast(context: Context, id: Int, action: String): PendingIntent {
