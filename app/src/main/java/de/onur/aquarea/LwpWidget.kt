@@ -13,7 +13,6 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
-import android.os.PersistableBundle
 import android.util.SizeF
 import android.view.View
 import android.widget.RemoteViews
@@ -72,7 +71,25 @@ class LwpWidgetProvider : AppWidgetProvider() {
                 storage.dhwPendingUntil = System.currentTimeMillis() + 60_000
                 storage.pendingOperation = target.name
                 LwpWidgetProvider.renderAll(context)
-                RefreshJob.setOperation(context, target)
+                // Befehl direkt hier senden (goAsync hält den Empfänger am Leben), nicht in einem Job,
+                // den das System jederzeit abbrechen kann. Danach den Status etwas später neu laden.
+                val result = goAsync()
+                Thread {
+                    try {
+                        val repo = Repository.get(context)
+                        val pump = storage.selectedPump ?: repo.pumps().first().also { storage.selectedPump = it }
+                        repo.client.setOperation(pump, status, target)
+                        storage.lastError = null
+                        RefreshJob.refreshAfterCommand(context)
+                    } catch (e: Exception) {
+                        storage.lastError = "Umschalten fehlgeschlagen: " + (e.message ?: e.javaClass.simpleName)
+                        storage.dhwPendingUntil = 0
+                        storage.pendingOperation = null
+                    } finally {
+                        LwpWidgetProvider.renderAll(context)
+                        result.finish()
+                    }
+                }.start()
             }
             ACTION_PREV, ACTION_NEXT -> {
                 val delta = if (intent.action == ACTION_PREV) 1 else -1
@@ -276,50 +293,46 @@ object WidgetRenderer {
 
 /** Lädt die Daten im Hintergrund: alle 15 Minuten (Android-Minimum) und auf Knopfdruck. */
 class RefreshJob : JobService() {
-    @Volatile
-    private var worker: Thread? = null
+    // Ein Thread pro Job: dieselbe Service-Instanz kann mehrere Jobs gleichzeitig ausführen
+    private val workers = java.util.concurrent.ConcurrentHashMap<Int, Thread>()
 
     override fun onStartJob(params: JobParameters): Boolean {
-        worker = Thread {
+        val thread = Thread {
             val storage = Storage(this)
             val repo = Repository.get(this)
-            val op = params.extras.getString(EXTRA_OPERATION)?.let { runCatching { Operation.valueOf(it) }.getOrNull() }
-            if (op != null) {
-                // Betriebsart setzen, danach frischen Status holen (control() lädt neu)
-                try {
-                    repo.control { c, p, s -> c.setOperation(p, s, op) }
-                } catch (e: Exception) {
-                    storage.lastError = "Umschalten fehlgeschlagen: " + (e.message ?: e.javaClass.simpleName)
-                }
+            val offsets = LwpWidgetProvider.widgetIds(this).map { storage.dayOffset(it) }.toSet() + 0
+            val ok = repo.refresh(offsets) != null
+            // Ein Umschaltbefehl gilt als erledigt, sobald frische Daten da sind (oder nach 60 s)
+            if (ok || params.jobId == AFTER_COMMAND_ID) {
                 storage.dhwPendingUntil = 0
                 storage.pendingOperation = null
             }
-            val offsets = LwpWidgetProvider.widgetIds(this).map { storage.dayOffset(it) }.toSet() + 0
-            repo.refresh(offsets)
             LwpWidgetProvider.renderAll(this)
-            jobFinished(params, false)
-        }.apply { start() }
+            workers.remove(params.jobId)
+            if (!Thread.currentThread().isInterrupted) jobFinished(params, false)
+        }
+        workers[params.jobId] = thread
+        thread.start()
         return true
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
-        worker?.interrupt()
+        workers.remove(params.jobId)?.interrupt()
         return true
     }
 
     companion object {
         private const val PERIODIC_ID = 1001
         private const val ONE_SHOT_ID = 1002
-        private const val DHW_ID = 1003
-        private const val EXTRA_OPERATION = "operation"
+        private const val AFTER_COMMAND_ID = 1004
 
-        /** Betriebsart im Hintergrund setzen. */
-        fun setOperation(context: Context, operation: Operation) {
+        /** Status ein paar Sekunden nach einem Befehl neu laden – die Pumpe übernimmt ihn verzögert. */
+        fun refreshAfterCommand(context: Context) {
             context.getSystemService(JobScheduler::class.java).schedule(
-                JobInfo.Builder(DHW_ID, ComponentName(context, RefreshJob::class.java))
+                JobInfo.Builder(AFTER_COMMAND_ID, ComponentName(context, RefreshJob::class.java))
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                    .setOverrideDeadline(0)
-                    .setExtras(PersistableBundle().apply { putString(EXTRA_OPERATION, operation.name) })
+                    .setMinimumLatency(4_000)
+                    .setOverrideDeadline(15_000)
                     .build()
             )
         }
@@ -341,7 +354,10 @@ class RefreshJob : JobService() {
         }
 
         fun runNow(context: Context) {
-            context.getSystemService(JobScheduler::class.java).schedule(
+            val scheduler = context.getSystemService(JobScheduler::class.java)
+            // Einen laufenden Abruf nicht durch Neuplanen abbrechen
+            if (scheduler.getPendingJob(ONE_SHOT_ID) != null) return
+            scheduler.schedule(
                 JobInfo.Builder(ONE_SHOT_ID, ComponentName(context, RefreshJob::class.java))
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                     .setOverrideDeadline(0)

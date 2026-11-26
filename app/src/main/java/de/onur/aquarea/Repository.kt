@@ -71,7 +71,10 @@ class Repository private constructor(private val context: Context) {
             storage.lastError = "Anmeldung abgelaufen – bitte App öffnen"
             null
         } catch (e: Exception) {
-            storage.lastError = e.message ?: e.javaClass.simpleName
+            // Vom System abgebrochen (z.B. Akku-Sparen): kein echter Fehler, beim nächsten Mal klappt es
+            val interrupted = e is InterruptedException || e is java.io.InterruptedIOException ||
+                e.cause is InterruptedException || Thread.currentThread().isInterrupted
+            if (!interrupted) storage.lastError = e.message ?: e.javaClass.simpleName
             null
         }
     }
