@@ -254,18 +254,18 @@
                 android:scaleType="fitCenter"
                 android:src="@drawable/mode_heat" />
             <ImageView
-                android:id="@+id/op_cool"
+                android:id="@+id/op_water"
                 android:layout_width="44dp"
                 android:layout_height="40dp"
                 android:layout_marginEnd="2dp"
                 android:background="@drawable/pill_off"
-                android:contentDescription="Kühlen"
+                android:contentDescription="Warmwasser"
                 android:paddingStart="6dp"
                 android:paddingTop="4dp"
                 android:paddingEnd="6dp"
                 android:paddingBottom="4dp"
                 android:scaleType="fitCenter"
-                android:src="@drawable/mode_cool" />
+                android:src="@drawable/mode_water" />
             <ImageView
                 android:id="@+id/op_cool_water"
                 android:layout_width="44dp"
@@ -280,18 +280,18 @@
                 android:scaleType="fitCenter"
                 android:src="@drawable/mode_cool_water" />
             <ImageView
-                android:id="@+id/op_water"
+                android:id="@+id/op_cool"
                 android:layout_width="44dp"
                 android:layout_height="40dp"
                 android:layout_marginEnd="2dp"
                 android:background="@drawable/pill_off"
-                android:contentDescription="Warmwasser"
+                android:contentDescription="Kühlen"
                 android:paddingStart="6dp"
                 android:paddingTop="4dp"
                 android:paddingEnd="6dp"
                 android:paddingBottom="4dp"
                 android:scaleType="fitCenter"
-                android:src="@drawable/mode_water" />
+                android:src="@drawable/mode_cool" />
 
             <TextView
                 android:layout_width="0dp"
