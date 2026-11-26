@@ -66,54 +66,66 @@ class LwpWidgetProvider : AppWidgetProvider() {
             }
             ACTION_TOGGLE_DHW -> {
                 val status = storage.status ?: return
-                if (storage.dhwPendingUntil > System.currentTimeMillis()) return // läuft schon
-                val target = status.operation.next(status.coolingSupported)
-                storage.dhwPendingUntil = System.currentTimeMillis() + 60_000
+                // Jedes Tippen schaltet sofort eine Stufe weiter (nur lokal). Gesendet wird erst,
+                // wenn 2 Sekunden nicht mehr getippt wurde – und dann nur die zuletzt gewählte Stufe.
+                val base = storage.pendingOperation?.takeIf { storage.dhwPendingUntil > System.currentTimeMillis() }
+                    ?.let { runCatching { Operation.valueOf(it) }.getOrNull() } ?: status.operation
+                val target = base.next(status.coolingSupported)
                 storage.pendingOperation = target.name
+                storage.dhwPendingUntil = System.currentTimeMillis() + 60_000
+                val seq = storage.opSeq + 1
+                storage.opSeq = seq
                 LwpWidgetProvider.renderAll(context)
-                // Befehl direkt hier senden (goAsync hält den Empfänger am Leben), nicht in einem Job,
-                // den das System jederzeit abbrechen kann. Danach den Status etwas später neu laden.
-                val result = goAsync()
-                Thread {
+                debounced(context, isLatest = { storage.opSeq == seq }) {
+                    val current = storage.status ?: status
+                    if (target == current.operation) {
+                        // wieder beim Ausgangszustand gelandet – nichts zu senden
+                        storage.dhwPendingUntil = 0
+                        storage.pendingOperation = null
+                        return@debounced
+                    }
+                    storage.opSentSeq = seq
+                    LwpWidgetProvider.renderAll(context)
                     try {
                         val repo = Repository.get(context)
-                        val pump = storage.selectedPump ?: repo.pumps().first().also { storage.selectedPump = it }
-                        repo.client.setOperation(pump, status, target)
+                        repo.client.setOperation(pump(context, storage), current, target)
                         storage.lastError = null
                         RefreshJob.refreshAfterCommand(context)
                     } catch (e: Exception) {
                         storage.lastError = "Umschalten fehlgeschlagen: " + (e.message ?: e.javaClass.simpleName)
-                        storage.dhwPendingUntil = 0
-                        storage.pendingOperation = null
-                    } finally {
-                        LwpWidgetProvider.renderAll(context)
-                        result.finish()
+                        if (storage.opSeq == seq) {
+                            storage.dhwPendingUntil = 0
+                            storage.pendingOperation = null
+                        }
                     }
-                }.start()
+                }
             }
             ACTION_TOGGLE_FORCE -> {
                 val status = storage.status ?: return
-                if (storage.forcePendingUntil > System.currentTimeMillis()) return
-                val target = !status.forceHotWater
-                storage.forcePendingUntil = System.currentTimeMillis() + 60_000
+                val base = if (storage.forcePendingUntil > System.currentTimeMillis()) storage.forcePendingTarget else status.forceHotWater
+                val target = !base
                 storage.forcePendingTarget = target
+                storage.forcePendingUntil = System.currentTimeMillis() + 60_000
+                val seq = storage.forceSeq + 1
+                storage.forceSeq = seq
                 LwpWidgetProvider.renderAll(context)
-                val result = goAsync()
-                Thread {
+                debounced(context, isLatest = { storage.forceSeq == seq }) {
+                    val current = storage.status ?: status
+                    if (target == current.forceHotWater) {
+                        storage.forcePendingUntil = 0
+                        return@debounced
+                    }
+                    storage.forceSentSeq = seq
+                    LwpWidgetProvider.renderAll(context)
                     try {
-                        val repo = Repository.get(context)
-                        val pump = storage.selectedPump ?: repo.pumps().first().also { storage.selectedPump = it }
-                        repo.client.setForceHotWater(pump, target)
+                        Repository.get(context).client.setForceHotWater(pump(context, storage), target)
                         storage.lastError = null
                         RefreshJob.refreshAfterCommand(context)
                     } catch (e: Exception) {
                         storage.lastError = "Warmwasser erzwingen fehlgeschlagen: " + (e.message ?: e.javaClass.simpleName)
-                        storage.forcePendingUntil = 0
-                    } finally {
-                        LwpWidgetProvider.renderAll(context)
-                        result.finish()
+                        if (storage.forceSeq == seq) storage.forcePendingUntil = 0
                     }
-                }.start()
+                }
             }
             ACTION_PREV, ACTION_NEXT -> {
                 val delta = if (intent.action == ACTION_PREV) 1 else -1
@@ -128,7 +140,29 @@ class LwpWidgetProvider : AppWidgetProvider() {
         }
     }
 
+    /**
+     * Wartet 2 Sekunden und führt [send] nur aus, wenn seitdem nicht erneut getippt wurde.
+     * goAsync() hält den Empfänger so lange am Leben.
+     */
+    private fun debounced(context: Context, isLatest: () -> Boolean, send: () -> Unit) {
+        val result = goAsync()
+        Thread {
+            try {
+                Thread.sleep(DEBOUNCE_MS)
+                if (isLatest()) send()
+            } catch (_: InterruptedException) {
+            } finally {
+                LwpWidgetProvider.renderAll(context)
+                result.finish()
+            }
+        }.start()
+    }
+
+    private fun pump(context: Context, storage: Storage) =
+        storage.selectedPump ?: Repository.get(context).pumps().first().also { storage.selectedPump = it }
+
     companion object {
+        private const val DEBOUNCE_MS = 2000L
         const val ACTION_REFRESH = "de.onur.aquarea.REFRESH"
         const val ACTION_PREV = "de.onur.aquarea.PREV_DAY"
         const val ACTION_NEXT = "de.onur.aquarea.NEXT_DAY"
@@ -225,6 +259,7 @@ object WidgetRenderer {
             views.setViewVisibility(R.id.dhw_toggle, View.GONE)
         } else {
             val pending = storage.dhwPendingUntil > System.currentTimeMillis()
+            val sending = pending && storage.opSentSeq == storage.opSeq
             val shown = (if (pending) storage.pendingOperation?.let { runCatching { Operation.valueOf(it) }.getOrNull() } else null)
                 ?: status.operation
             views.setViewVisibility(R.id.dhw_toggle, View.VISIBLE)
@@ -240,8 +275,8 @@ object WidgetRenderer {
                 }
             )
             views.setViewVisibility(R.id.mode_icon, if (shown == Operation.NONE) View.GONE else View.VISIBLE)
-            views.setViewVisibility(R.id.mode_pending, if (pending || shown == Operation.NONE) View.VISIBLE else View.GONE)
-            views.setTextViewText(R.id.mode_pending, if (pending) "…" else "Aus")
+            views.setViewVisibility(R.id.mode_pending, if (sending || shown == Operation.NONE) View.VISIBLE else View.GONE)
+            views.setTextViewText(R.id.mode_pending, if (sending) "…" else "Aus")
             views.setOnClickPendingIntent(R.id.dhw_toggle, broadcast(context, id, LwpWidgetProvider.ACTION_TOGGLE_DHW))
         }
 
@@ -254,7 +289,8 @@ object WidgetRenderer {
             views.setViewVisibility(R.id.force_toggle, View.VISIBLE)
             views.setInt(R.id.force_toggle, "setBackgroundResource", if (active) R.drawable.pill_active else R.drawable.pill_off)
             views.setInt(R.id.force_icon, "setImageAlpha", if (active) 255 else 110)
-            views.setViewVisibility(R.id.force_pending, if (pending) View.VISIBLE else View.GONE)
+            val forceSending = pending && storage.forceSentSeq == storage.forceSeq
+            views.setViewVisibility(R.id.force_pending, if (forceSending) View.VISIBLE else View.GONE)
             views.setOnClickPendingIntent(R.id.force_toggle, broadcast(context, id, LwpWidgetProvider.ACTION_TOGGLE_FORCE))
         }
 
@@ -344,9 +380,12 @@ class RefreshJob : JobService() {
             val ok = repo.refresh(offsets) != null
             // Ein Umschaltbefehl gilt als erledigt, sobald frische Daten da sind (oder nach 60 s)
             if (ok || params.jobId == AFTER_COMMAND_ID) {
-                storage.dhwPendingUntil = 0
-                storage.pendingOperation = null
-                storage.forcePendingUntil = 0
+                // nur abschließen, was schon gesendet wurde – eine laufende Auswahl bleibt stehen
+                if (storage.opSentSeq == storage.opSeq) {
+                    storage.dhwPendingUntil = 0
+                    storage.pendingOperation = null
+                }
+                if (storage.forceSentSeq == storage.forceSeq) storage.forcePendingUntil = 0
             }
             LwpWidgetProvider.renderAll(this)
             workers.remove(params.jobId)

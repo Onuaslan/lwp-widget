@@ -87,6 +87,20 @@ class Storage(context: Context) : SessionStore {
         get() = prefs.getBoolean("force_target", false)
         set(v) = prefs.edit().putBoolean("force_target", v).apply()
 
+    /** Zähler fürs Entprellen: jedes Tippen erhöht seq, gesendet wird nur die letzte. */
+    var opSeq: Long
+        get() = prefs.getLong("op_seq", 0)
+        set(v) = prefs.edit().putLong("op_seq", v).commit().let { }
+    var opSentSeq: Long
+        get() = prefs.getLong("op_sent_seq", -1)
+        set(v) = prefs.edit().putLong("op_sent_seq", v).commit().let { }
+    var forceSeq: Long
+        get() = prefs.getLong("force_seq", 0)
+        set(v) = prefs.edit().putLong("force_seq", v).commit().let { }
+    var forceSentSeq: Long
+        get() = prefs.getLong("force_sent_seq", -1)
+        set(v) = prefs.edit().putLong("force_sent_seq", v).commit().let { }
+
     /** Die Betriebsart, auf die gerade umgeschaltet wird. */
     var pendingOperation: String?
         get() = prefs.getString("pending_op", null)
