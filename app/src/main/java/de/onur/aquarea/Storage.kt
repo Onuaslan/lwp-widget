@@ -79,6 +79,14 @@ class Storage(context: Context) : SessionStore {
         get() = prefs.getLong("dhw_pending", 0)
         set(v) = prefs.edit().putLong("dhw_pending", v).apply()
 
+    /** Bis wann „Warmwasser erzwingen“ als „läuft“ gilt, und auf welchen Zustand (Unix-ms / an?). */
+    var forcePendingUntil: Long
+        get() = prefs.getLong("force_pending", 0)
+        set(v) = prefs.edit().putLong("force_pending", v).apply()
+    var forcePendingTarget: Boolean
+        get() = prefs.getBoolean("force_target", false)
+        set(v) = prefs.edit().putBoolean("force_target", v).apply()
+
     /** Die Betriebsart, auf die gerade umgeschaltet wird. */
     var pendingOperation: String?
         get() = prefs.getString("pending_op", null)

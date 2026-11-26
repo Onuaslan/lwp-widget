@@ -108,6 +108,8 @@ data class HeatPumpStatus(
     val flowTemperature: Int? = null,
     val zones: List<Zone> = emptyList(),
     val tank: Tank? = null,
+    /** „Warmwasser erzwingen“ (Force DHW, am Panel: Wasserhahn mit Pfeil) aktiv */
+    val forceHotWater: Boolean = false,
     val faults: List<String> = emptyList(),
     /** Zeitpunkt des Abrufs, Unix-Millisekunden. */
     val fetchedAt: Long = System.currentTimeMillis(),

@@ -169,6 +169,11 @@ class ComfortCloudClientTest {
         assertEquals("[{\"zoneId\":1,\"operationStatus\":0,\"heatSet\":22}]", param["zoneStatus"].toString())
         assertEquals("{\"operationStatus\":1}", param["tankStatus"].toString())
 
+        assertFalse(s.forceHotWater)
+        c.setForceHotWater(HeatPump("HP1", "LWP"), true)
+        val force = Json.parseToJsonElement(requests.last { it.path == "/remote/v1/app/common/transfer" }.body.readUtf8()).jsonObject["bodyParam"]!!.jsonObject
+        assertEquals("1", force["forceDHW"].toString())
+
         c.setOperation(HeatPump("HP1", "LWP"), s, Operation.COOL)
         val cool = Json.parseToJsonElement(requests.last { it.path == "/remote/v1/app/common/transfer" }.body.readUtf8()).jsonObject["bodyParam"]!!.jsonObject
         assertEquals("3", cool["operationMode"].toString())

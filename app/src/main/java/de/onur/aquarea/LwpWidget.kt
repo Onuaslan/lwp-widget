@@ -91,6 +91,30 @@ class LwpWidgetProvider : AppWidgetProvider() {
                     }
                 }.start()
             }
+            ACTION_TOGGLE_FORCE -> {
+                val status = storage.status ?: return
+                if (storage.forcePendingUntil > System.currentTimeMillis()) return
+                val target = !status.forceHotWater
+                storage.forcePendingUntil = System.currentTimeMillis() + 60_000
+                storage.forcePendingTarget = target
+                LwpWidgetProvider.renderAll(context)
+                val result = goAsync()
+                Thread {
+                    try {
+                        val repo = Repository.get(context)
+                        val pump = storage.selectedPump ?: repo.pumps().first().also { storage.selectedPump = it }
+                        repo.client.setForceHotWater(pump, target)
+                        storage.lastError = null
+                        RefreshJob.refreshAfterCommand(context)
+                    } catch (e: Exception) {
+                        storage.lastError = "Warmwasser erzwingen fehlgeschlagen: " + (e.message ?: e.javaClass.simpleName)
+                        storage.forcePendingUntil = 0
+                    } finally {
+                        LwpWidgetProvider.renderAll(context)
+                        result.finish()
+                    }
+                }.start()
+            }
             ACTION_PREV, ACTION_NEXT -> {
                 val delta = if (intent.action == ACTION_PREV) 1 else -1
                 val offset = (storage.dayOffset(id) + delta).coerceIn(0, MAX_DAYS_BACK)
@@ -109,6 +133,7 @@ class LwpWidgetProvider : AppWidgetProvider() {
         const val ACTION_PREV = "de.onur.aquarea.PREV_DAY"
         const val ACTION_NEXT = "de.onur.aquarea.NEXT_DAY"
         const val ACTION_TOGGLE_DHW = "de.onur.aquarea.TOGGLE_DHW"
+        const val ACTION_TOGGLE_FORCE = "de.onur.aquarea.TOGGLE_FORCE_DHW"
         const val MAX_DAYS_BACK = 13
 
         fun widgetIds(context: Context): IntArray =
@@ -179,6 +204,7 @@ object WidgetRenderer {
         // Live-Werte
         views.setTextViewText(R.id.outdoor, status?.outdoorTemperature?.let { "$it °C" } ?: "–")
         views.setTextViewText(R.id.flow, status?.flowTemperature?.let { "$it °C" } ?: "–")
+        views.setTextViewText(R.id.tank_temp, status?.tank?.temperatureNow?.let { "$it °C" } ?: "–")
         val activity = status?.activity
         // Im Widget ist wenig Platz: Warmwasser als „WW“ abkürzen
         views.setTextViewText(R.id.activity, if (activity == Activity.HOT_WATER) "WW" else activity?.label ?: "–")
@@ -219,15 +245,28 @@ object WidgetRenderer {
             views.setOnClickPendingIntent(R.id.dhw_toggle, broadcast(context, id, LwpWidgetProvider.ACTION_TOGGLE_DHW))
         }
 
+        // Warmwasser erzwingen: rot umrandet = aktiv, blass = aus
+        if (status?.tank == null) {
+            views.setViewVisibility(R.id.force_toggle, View.GONE)
+        } else {
+            val pending = storage.forcePendingUntil > System.currentTimeMillis()
+            val active = if (pending) storage.forcePendingTarget else status.forceHotWater
+            views.setViewVisibility(R.id.force_toggle, View.VISIBLE)
+            views.setInt(R.id.force_toggle, "setBackgroundResource", if (active) R.drawable.pill_active else R.drawable.pill_off)
+            views.setInt(R.id.force_icon, "setImageAlpha", if (active) 255 else 110)
+            views.setViewVisibility(R.id.force_pending, if (pending) View.VISIBLE else View.GONE)
+            views.setOnClickPendingIntent(R.id.force_toggle, broadcast(context, id, LwpWidgetProvider.ACTION_TOGGLE_FORCE))
+        }
+
         // Legende nur, wenn das Diagramm trotzdem genug Höhe behält (sonst z.B. im Querformat ausblenden)
-        val showLegend = if (wide) heightDp - 18 - 26 >= 90 else heightDp - CHROME_DP - LEGEND_DP >= MIN_CHART_DP
+        val showLegend = if (wide) true else heightDp - CHROME_DP - LEGEND_DP >= MIN_CHART_DP
         views.setViewVisibility(R.id.legend, if (showLegend) View.VISIBLE else View.GONE)
 
         // Diagramm in genau der verfügbaren Größe zeichnen, damit nichts gestaucht wird
         val density = context.resources.displayMetrics.density
         val chartWidthDp = max(120, if (wide) widthDp - 26 - 132 - 10 else widthDp - 28)
         val chartHeightDp = if (wide) {
-            max(60, heightDp - 18 - 4 - (if (showLegend) 22 else 0))
+            max(60, heightDp - 18 - 4 - 28) // Kopfzeile mit Datum und Legende
         } else {
             max(64, heightDp - CHROME_DP - (if (showLegend) LEGEND_DP else 0))
         }
@@ -282,6 +321,7 @@ object WidgetRenderer {
             LwpWidgetProvider.ACTION_REFRESH -> 1
             LwpWidgetProvider.ACTION_PREV -> 2
             LwpWidgetProvider.ACTION_TOGGLE_DHW -> 4
+            LwpWidgetProvider.ACTION_TOGGLE_FORCE -> 5
             else -> 3
         }
         return PendingIntent.getBroadcast(
@@ -306,6 +346,7 @@ class RefreshJob : JobService() {
             if (ok || params.jobId == AFTER_COMMAND_ID) {
                 storage.dhwPendingUntil = 0
                 storage.pendingOperation = null
+                storage.forcePendingUntil = 0
             }
             LwpWidgetProvider.renderAll(this)
             workers.remove(params.jobId)

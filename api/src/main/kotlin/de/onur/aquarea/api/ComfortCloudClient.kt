@@ -416,6 +416,17 @@ class ComfortCloudClient(
         })
     }
 
+    /**
+     * „Warmwasser erzwingen“ (Force DHW) ein/aus: die Pumpe bereitet sofort nur Warmwasser.
+     * Gleicher Befehl wie `set_force_dhw` der Home-Assistant-Bibliothek aioaquarea.
+     */
+    fun setForceHotWater(pump: HeatPump, on: Boolean) {
+        transfer("/remote/v1/api/devices", "POST", buildJsonObject {
+            put("gwid", pump.guid)
+            put("forceDHW", if (on) 1 else 0)
+        })
+    }
+
     /** Modus (Heizen/Kühlen/Auto) setzen und dabei alle Zonen einschalten. */
     fun setMode(pump: HeatPump, current: HeatPumpStatus, mode: ModeCommand) {
         transfer("/remote/v1/api/devices", "POST", buildJsonObject {
@@ -591,6 +602,7 @@ class ComfortCloudClient(
                 ?: zones.firstOrNull()?.temperatureNow,
             zones = zones,
             tank = tank,
+            forceHotWater = s.int("forceDHW") == 1,
             faults = (s["faultStatus"] as? JsonArray).orEmpty().mapNotNull { f ->
                 (f as? JsonObject)?.let { listOfNotNull(it.str("errorCode"), it.str("errorMessage")).joinToString(" ") }
             }.filter { it.isNotBlank() },
