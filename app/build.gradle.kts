@@ -11,8 +11,11 @@ android {
         applicationId = "de.onur.aquarea.widget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // Jede GitHub-Version bekommt eine eigene, steigende Versionsnummer. Sonst halten manche
+        // Launcher (z.B. HyperOS) alte Widget-Daten im Cache und blenden das Widget aus.
+        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = build
+        versionName = "1.$build"
     }
 
     buildTypes {
