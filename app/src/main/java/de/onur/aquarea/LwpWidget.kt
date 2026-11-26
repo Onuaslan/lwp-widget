@@ -141,7 +141,8 @@ object WidgetRenderer {
 
         views.setTextViewText(R.id.title, status?.name ?: storage.selectedPump?.name ?: "LWP")
         views.setTextViewText(R.id.date, date.format(dateFormat))
-        views.setTextViewText(R.id.total_date, date.format(dateFormat))
+        // unten immer das heutige Datum, oben der gewählte Tag
+        views.setTextViewText(R.id.total_date, LocalDate.now().format(dateFormat))
         views.setViewVisibility(R.id.next, if (offset > 0) View.VISIBLE else View.INVISIBLE)
 
         // Live-Werte
