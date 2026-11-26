@@ -26,6 +26,7 @@
             <TextView
                 android:id="@+id/title"
                 android:layout_width="wrap_content"
+                android:visibility="gone"
                 android:layout_height="wrap_content"
                 android:maxLines="1"
                 android:text="LWP"
@@ -36,37 +37,24 @@
             <LinearLayout
                 android:id="@+id/dhw_toggle"
                 android:layout_width="wrap_content"
-                android:layout_height="30dp"
-                android:layout_marginStart="8dp"
+                android:layout_height="36dp"
                 android:background="@drawable/pill_off"
                 android:contentDescription="Betriebsart wechseln"
                 android:gravity="center_vertical"
+                android:minWidth="48dp"
                 android:orientation="horizontal"
-                android:paddingStart="9dp"
-                android:paddingEnd="9dp">
+                android:paddingStart="12dp"
+                android:paddingTop="3dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="3dp">
 
                 <ImageView
-                    android:id="@+id/mode_heat"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_mode_heat" />
-
-                <TextView
-                    android:id="@+id/mode_plus"
+                    android:id="@+id/mode_icon"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="2dp"
-                    android:layout_marginEnd="2dp"
-                    android:text="+"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
-
-                <ImageView
-                    android:id="@+id/mode_water"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_mode_water" />
+                    android:layout_height="30dp"
+                    android:adjustViewBounds="true"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/mode_heat_water" />
 
                 <TextView
                     android:id="@+id/mode_pending"

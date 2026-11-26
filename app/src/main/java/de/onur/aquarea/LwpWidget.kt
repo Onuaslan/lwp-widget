@@ -21,6 +21,7 @@ import de.onur.aquarea.api.Activity
 import de.onur.aquarea.api.ComfortCloudClient
 import de.onur.aquarea.api.Operation
 import de.onur.aquarea.api.activity
+import de.onur.aquarea.api.coolingSupported
 import de.onur.aquarea.api.operation
 import java.text.SimpleDateFormat
 import java.time.LocalDate
@@ -67,7 +68,7 @@ class LwpWidgetProvider : AppWidgetProvider() {
             ACTION_TOGGLE_DHW -> {
                 val status = storage.status ?: return
                 if (storage.dhwPendingUntil > System.currentTimeMillis()) return // läuft schon
-                val target = status.operation.next
+                val target = status.operation.next(status.coolingSupported)
                 storage.dhwPendingUntil = System.currentTimeMillis() + 60_000
                 storage.pendingOperation = target.name
                 LwpWidgetProvider.renderAll(context)
@@ -109,7 +110,7 @@ object WidgetRenderer {
     private val dateFormat = DateTimeFormatter.ofPattern("dd MM yyyy")
 
     /** Höhe aller Elemente außer dem Diagramm (dp), mit und ohne Legende. */
-    private const val CHROME_DP = 152
+    private const val CHROME_DP = 160
     private const val LEGEND_DP = 28
     private const val MIN_CHART_DP = 110
 
@@ -184,9 +185,18 @@ object WidgetRenderer {
             val shown = (if (pending) storage.pendingOperation?.let { runCatching { Operation.valueOf(it) }.getOrNull() } else null)
                 ?: status.operation
             views.setViewVisibility(R.id.dhw_toggle, View.VISIBLE)
-            views.setViewVisibility(R.id.mode_heat, if (shown.heating) View.VISIBLE else View.GONE)
-            views.setViewVisibility(R.id.mode_water, if (shown.hotWater) View.VISIBLE else View.GONE)
-            views.setViewVisibility(R.id.mode_plus, if (shown.heating && shown.hotWater) View.VISIBLE else View.GONE)
+            views.setImageViewResource(
+                R.id.mode_icon,
+                when (shown) {
+                    Operation.HEAT_AND_WATER -> R.drawable.mode_heat_water
+                    Operation.HEAT -> R.drawable.mode_heat
+                    Operation.COOL -> R.drawable.mode_cool
+                    Operation.COOL_AND_WATER -> R.drawable.mode_cool_water
+                    Operation.WATER -> R.drawable.mode_water
+                    Operation.NONE -> R.drawable.mode_heat_water
+                }
+            )
+            views.setViewVisibility(R.id.mode_icon, if (shown == Operation.NONE) View.GONE else View.VISIBLE)
             views.setViewVisibility(R.id.mode_pending, if (pending || shown == Operation.NONE) View.VISIBLE else View.GONE)
             views.setTextViewText(R.id.mode_pending, if (pending) "…" else "Aus")
             views.setOnClickPendingIntent(R.id.dhw_toggle, broadcast(context, id, LwpWidgetProvider.ACTION_TOGGLE_DHW))
@@ -277,7 +287,7 @@ class RefreshJob : JobService() {
             if (op != null) {
                 // Betriebsart setzen, danach frischen Status holen (control() lädt neu)
                 try {
-                    repo.control { c, p, s -> c.setHeatingAndHotWater(p, s, op.heating, op.hotWater) }
+                    repo.control { c, p, s -> c.setOperation(p, s, op) }
                 } catch (e: Exception) {
                     storage.lastError = "Umschalten fehlgeschlagen: " + (e.message ?: e.javaClass.simpleName)
                 }

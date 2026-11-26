@@ -133,30 +133,40 @@ val HeatPumpStatus.activity: Activity
         else -> Activity.IDLE
     }
 
-/** Was eingeschaltet ist – wie die Betriebsart-Taste am Bedienpanel. */
-enum class Operation(val label: String, val heating: Boolean, val hotWater: Boolean) {
-    HEAT_AND_WATER("Heizen + Warmwasser", true, true),
-    HEAT_ONLY("Nur Heizen", true, false),
-    WATER_ONLY("Nur Warmwasser", false, true),
-    NONE("Aus", false, false);
+/** Betriebsart wie am Bedienpanel der Wärmepumpe. */
+enum class Operation(val label: String, val zones: Boolean, val cooling: Boolean, val hotWater: Boolean) {
+    HEAT_AND_WATER("Heizen + Warmwasser", true, false, true),
+    HEAT("Heizen", true, false, false),
+    COOL("Kühlen", true, true, false),
+    COOL_AND_WATER("Kühlen + Warmwasser", true, true, true),
+    WATER("Warmwasser", false, false, true),
+    NONE("Aus", false, false, false);
 
-    /** Nächste Stufe beim Tippen: Heizen + WW → nur Heizen → nur WW → Heizen + WW */
-    val next: Operation
-        get() = when (this) {
-            HEAT_AND_WATER -> HEAT_ONLY
-            HEAT_ONLY -> WATER_ONLY
-            WATER_ONLY, NONE -> HEAT_AND_WATER
-        }
+    /**
+     * Nächste Stufe beim Tippen, Reihenfolge wie die Symbole am Panel:
+     * Heizen + WW → Heizen → Kühlen → Kühlen + WW → Warmwasser → …
+     * Ohne Kühlfunktion werden die Kühl-Stufen übersprungen.
+     */
+    fun next(coolingSupported: Boolean): Operation {
+        val cycle = listOf(HEAT_AND_WATER, HEAT, COOL, COOL_AND_WATER, WATER)
+            .filter { coolingSupported || !it.cooling }
+        val i = cycle.indexOf(this)
+        return if (i < 0) HEAT_AND_WATER else cycle[(i + 1) % cycle.size]
+    }
 }
+
+/** Kann die Anlage kühlen? (Panasonic meldet dann einen Kühl-Sollwertbereich je Zone.) */
+val HeatPumpStatus.coolingSupported: Boolean
+    get() = zones.any { it.coolMin != null && it.coolMax != null }
 
 val HeatPumpStatus.operation: Operation
     get() {
-        val heating = zones.any { it.on }
+        val zonesOn = zones.any { it.on }
         val water = tank?.on == true
         return when {
-            heating && water -> Operation.HEAT_AND_WATER
-            heating -> Operation.HEAT_ONLY
-            water -> Operation.WATER_ONLY
+            zonesOn && mode.isCooling -> if (water) Operation.COOL_AND_WATER else Operation.COOL
+            zonesOn -> if (water) Operation.HEAT_AND_WATER else Operation.HEAT
+            water -> Operation.WATER
             else -> Operation.NONE
         }
     }

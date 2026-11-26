@@ -388,18 +388,31 @@ class ComfortCloudClient(
     }
 
     /**
-     * Heizen (alle Zonen) und Warmwasser gemeinsam ein-/ausschalten – wie die Tasten am Bedienpanel:
-     * Heizen + Warmwasser, nur Heizen oder nur Warmwasser.
+     * Betriebsart setzen wie am Bedienpanel (Heizen/Kühlen und Warmwasser).
+     * Entspricht `set_mode` der Home-Assistant-Bibliothek aioaquarea: Modus, Gesamtstatus,
+     * Zonen und Speicher werden in einem Befehl geschickt.
      */
-    fun setHeatingAndHotWater(pump: HeatPump, current: HeatPumpStatus, heating: Boolean, hotWater: Boolean) {
+    fun setOperation(pump: HeatPump, current: HeatPumpStatus, op: Operation) {
+        val mode = when {
+            !op.zones -> 0 // Zonen aus (nur Warmwasser)
+            op.cooling -> ModeCommand.COOL.apiValue
+            else -> ModeCommand.HEAT.apiValue
+        }
         transfer("/remote/v1/api/devices", "POST", buildJsonObject {
             put("gwid", pump.guid)
+            put("operationMode", mode)
+            put("operationStatus", if (op.zones || op.hotWater) 1 else 0)
             put("zoneStatus", buildJsonArray {
                 current.zones.forEach { z ->
-                    add(buildJsonObject { put("zoneId", z.id); put("operationStatus", if (heating) 1 else 0) })
+                    add(buildJsonObject {
+                        put("zoneId", z.id)
+                        put("operationStatus", if (op.zones) 1 else 0)
+                        z.heatSet?.let { put("heatSet", it) }
+                        z.coolSet?.let { put("coolSet", it) }
+                    })
                 }
             })
-            put("tankStatus", buildJsonObject { put("operationStatus", if (hotWater) 1 else 0) })
+            put("tankStatus", buildJsonObject { put("operationStatus", if (op.hotWater) 1 else 0) })
         })
     }
 

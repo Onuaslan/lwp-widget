@@ -149,19 +149,30 @@ class ComfortCloudClientTest {
     }
 
     @Test
-    fun `operation cycles like the control panel and is sent as zone and tank status`() {
+    fun `operation cycles like the control panel and is sent as one command`() {
         val c = client()
         val s = c.parseStatus(HeatPump("HP1", "LWP"), Json.parseToJsonElement(STATUS_JSON).jsonObject)
         assertEquals(Operation.HEAT_AND_WATER, s.operation)
-        assertEquals(Operation.HEAT_ONLY, s.operation.next)
-        assertEquals(Operation.WATER_ONLY, Operation.HEAT_ONLY.next)
-        assertEquals(Operation.HEAT_AND_WATER, Operation.WATER_ONLY.next)
+        assertFalse(s.coolingSupported) // Kühlwerte sind 126 = ungültig
+        assertEquals(Operation.HEAT, Operation.HEAT_AND_WATER.next(false))
+        assertEquals(Operation.WATER, Operation.HEAT.next(false))
+        assertEquals(Operation.HEAT_AND_WATER, Operation.WATER.next(false))
+        assertEquals(Operation.COOL, Operation.HEAT.next(true))
+        assertEquals(Operation.COOL_AND_WATER, Operation.COOL.next(true))
+        assertEquals(Operation.WATER, Operation.COOL_AND_WATER.next(true))
 
-        c.setHeatingAndHotWater(HeatPump("HP1", "LWP"), s, heating = false, hotWater = true)
+        c.setOperation(HeatPump("HP1", "LWP"), s, Operation.WATER)
         val body = Json.parseToJsonElement(requests.last { it.path == "/remote/v1/app/common/transfer" }.body.readUtf8()).jsonObject
         val param = body["bodyParam"]!!.jsonObject
-        assertEquals("[{\"zoneId\":1,\"operationStatus\":0}]", param["zoneStatus"].toString())
+        assertEquals("0", param["operationMode"].toString())
+        assertEquals("1", param["operationStatus"].toString())
+        assertEquals("[{\"zoneId\":1,\"operationStatus\":0,\"heatSet\":22}]", param["zoneStatus"].toString())
         assertEquals("{\"operationStatus\":1}", param["tankStatus"].toString())
+
+        c.setOperation(HeatPump("HP1", "LWP"), s, Operation.COOL)
+        val cool = Json.parseToJsonElement(requests.last { it.path == "/remote/v1/app/common/transfer" }.body.readUtf8()).jsonObject["bodyParam"]!!.jsonObject
+        assertEquals("3", cool["operationMode"].toString())
+        assertEquals("{\"operationStatus\":0}", cool["tankStatus"].toString())
     }
 
     @Test
