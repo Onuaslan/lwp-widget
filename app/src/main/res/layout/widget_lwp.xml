@@ -294,8 +294,9 @@
         android:layout_marginEnd="6dp"
         android:src="@color/divider" />
 
-    <!-- Fußzeile -->
+    <!-- Fußzeile: die ganze Zeile aktualisiert, rechts ein großer Knopf -->
     <LinearLayout
+        android:id="@+id/footer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
@@ -315,10 +316,13 @@
 
         <ImageView
             android:id="@+id/refresh"
-            android:layout_width="30dp"
-            android:layout_height="26dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginTop="2dp"
+            android:background="@drawable/refresh_bg"
             android:contentDescription="Aktualisieren"
-            android:padding="5dp"
+            android:padding="9dp"
+            android:scaleType="fitCenter"
             android:src="@drawable/ic_refresh" />
     </LinearLayout>
 </LinearLayout>

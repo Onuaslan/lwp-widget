@@ -155,6 +155,7 @@ object WidgetRenderer {
         // Klicks
         views.setOnClickPendingIntent(R.id.refresh, broadcast(context, id, LwpWidgetProvider.ACTION_REFRESH))
         views.setOnClickPendingIntent(R.id.updated, broadcast(context, id, LwpWidgetProvider.ACTION_REFRESH))
+        views.setOnClickPendingIntent(R.id.footer, broadcast(context, id, LwpWidgetProvider.ACTION_REFRESH))
         views.setOnClickPendingIntent(R.id.prev, broadcast(context, id, LwpWidgetProvider.ACTION_PREV))
         views.setOnClickPendingIntent(R.id.next, broadcast(context, id, LwpWidgetProvider.ACTION_NEXT))
         // Tippen aufs Widget öffnet die Comfort-Cloud-App (falls installiert), der Name öffnet diese App
