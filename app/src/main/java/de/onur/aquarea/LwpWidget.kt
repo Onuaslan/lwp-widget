@@ -309,7 +309,7 @@ object WidgetRenderer {
             refreshing -> "Aktualisiere …"
             storage.lastError != null -> "⚠ ${storage.lastError}"
             storage.lastRefresh > 0 ->
-                "Aktualisiert " + SimpleDateFormat("HH:mm", Locale.GERMANY).format(Date(storage.lastRefresh))
+                "Stand " + SimpleDateFormat("HH:mm", Locale.GERMANY).format(Date(storage.lastRefresh))
             else -> "Tippen zum Aktualisieren"
         }
         views.setTextViewText(R.id.updated, footer)
