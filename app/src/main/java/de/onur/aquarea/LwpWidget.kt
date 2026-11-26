@@ -64,13 +64,10 @@ class LwpWidgetProvider : AppWidgetProvider() {
                 WidgetRenderer.render(context, manager, id, refreshing = true)
                 RefreshJob.runNow(context)
             }
-            ACTION_TOGGLE_DHW -> {
+            ACTION_SELECT_OP -> {
                 val status = storage.status ?: return
-                // Jedes Tippen schaltet sofort eine Stufe weiter (nur lokal). Gesendet wird erst,
-                // wenn 2 Sekunden nicht mehr getippt wurde – und dann nur die zuletzt gewählte Stufe.
-                val base = storage.pendingOperation?.takeIf { storage.dhwPendingUntil > System.currentTimeMillis() }
-                    ?.let { runCatching { Operation.valueOf(it) }.getOrNull() } ?: status.operation
-                val target = base.next(status.coolingSupported)
+                val target = intent.getStringExtra(EXTRA_OP)?.let { runCatching { Operation.valueOf(it) }.getOrNull() } ?: return
+                // Auswahl sofort anzeigen; gesendet wird erst nach 2 Sekunden ohne weiteres Tippen
                 storage.pendingOperation = target.name
                 storage.dhwPendingUntil = System.currentTimeMillis() + 60_000
                 val seq = storage.opSeq + 1
@@ -79,7 +76,7 @@ class LwpWidgetProvider : AppWidgetProvider() {
                 debounced(context, isLatest = { storage.opSeq == seq }) {
                     val current = storage.status ?: status
                     if (target == current.operation) {
-                        // wieder beim Ausgangszustand gelandet – nichts zu senden
+                        // ist schon so eingestellt – nichts zu senden
                         storage.dhwPendingUntil = 0
                         storage.pendingOperation = null
                         return@debounced
@@ -166,7 +163,8 @@ class LwpWidgetProvider : AppWidgetProvider() {
         const val ACTION_REFRESH = "de.onur.aquarea.REFRESH"
         const val ACTION_PREV = "de.onur.aquarea.PREV_DAY"
         const val ACTION_NEXT = "de.onur.aquarea.NEXT_DAY"
-        const val ACTION_TOGGLE_DHW = "de.onur.aquarea.TOGGLE_DHW"
+        const val ACTION_SELECT_OP = "de.onur.aquarea.SELECT_OPERATION"
+        const val EXTRA_OP = "operation"
         const val ACTION_TOGGLE_FORCE = "de.onur.aquarea.TOGGLE_FORCE_DHW"
         const val MAX_DAYS_BACK = 13
 
@@ -186,7 +184,7 @@ object WidgetRenderer {
     private val dateFormat = DateTimeFormatter.ofPattern("dd MM yyyy")
 
     /** Höhe aller Elemente außer dem Diagramm (dp), mit und ohne Legende. */
-    private const val CHROME_DP = 160
+    private const val CHROME_DP = 170
     private const val LEGEND_DP = 28
     private const val MIN_CHART_DP = 110
 
@@ -229,10 +227,8 @@ object WidgetRenderer {
         val date = LocalDate.now().minusDays(offset.toLong())
         val day = storage.consumption(date.toString())
 
-        views.setTextViewText(R.id.title, status?.name ?: storage.selectedPump?.name ?: "LWP")
-        views.setTextViewText(R.id.date, date.format(dateFormat))
-        // unten immer das heutige Datum, oben der gewählte Tag
-        views.setTextViewText(R.id.total_date, LocalDate.now().format(dateFormat))
+        // Unten links: der Tag, den das Diagramm zeigt, mit Blättern
+        views.setTextViewText(R.id.total_date, date.format(dateFormat))
         views.setViewVisibility(R.id.next, if (offset > 0) View.VISIBLE else View.INVISIBLE)
 
         // Live-Werte
@@ -253,69 +249,59 @@ object WidgetRenderer {
             }
         )
 
-        // Betriebsart-Knopf wie am Bedienpanel: Heizen + WW / nur Heizen / nur WW.
-        // Nach dem Tippen zeigt er sofort die neue Stufe mit „…“, bis die Pumpe sie bestätigt.
-        if (status == null || (status.tank == null && status.zones.isEmpty())) {
-            views.setViewVisibility(R.id.dhw_toggle, View.GONE)
-        } else {
-            val pending = storage.dhwPendingUntil > System.currentTimeMillis()
-            val sending = pending && storage.opSentSeq == storage.opSeq
-            val shown = (if (pending) storage.pendingOperation?.let { runCatching { Operation.valueOf(it) }.getOrNull() } else null)
-                ?: status.operation
-            views.setViewVisibility(R.id.dhw_toggle, View.VISIBLE)
-            views.setImageViewResource(
-                R.id.mode_icon,
-                when (shown) {
-                    Operation.HEAT_AND_WATER -> R.drawable.mode_heat_water
-                    Operation.HEAT -> R.drawable.mode_heat
-                    Operation.COOL -> R.drawable.mode_cool
-                    Operation.COOL_AND_WATER -> R.drawable.mode_cool_water
-                    Operation.WATER -> R.drawable.mode_water
-                    Operation.NONE -> R.drawable.mode_heat_water
-                }
-            )
-            views.setViewVisibility(R.id.mode_icon, if (shown == Operation.NONE) View.GONE else View.VISIBLE)
-            views.setViewVisibility(R.id.mode_pending, if (sending || shown == Operation.NONE) View.VISIBLE else View.GONE)
-            views.setTextViewText(R.id.mode_pending, if (sending) "…" else "Aus")
-            views.setOnClickPendingIntent(R.id.dhw_toggle, broadcast(context, id, LwpWidgetProvider.ACTION_TOGGLE_DHW))
+        // Betriebsart-Knöpfe: der aktive (bzw. gerade gewählte) ist rot umrandet, die anderen blass.
+        // Kühl-Knöpfe nur, wenn die Anlage kühlen kann.
+        val pending = storage.dhwPendingUntil > System.currentTimeMillis()
+        val sending = pending && storage.opSentSeq == storage.opSeq
+        val selected = (if (pending) storage.pendingOperation?.let { runCatching { Operation.valueOf(it) }.getOrNull() } else null)
+            ?: status?.operation
+        val cooling = status?.coolingSupported == true
+        for ((op, viewId) in OP_BUTTONS) {
+            val visible = status != null && (cooling || !op.cooling)
+            views.setViewVisibility(viewId, if (visible) View.VISIBLE else View.GONE)
+            if (!visible) continue
+            val active = op == selected
+            views.setInt(viewId, "setBackgroundResource", if (active) R.drawable.pill_active else R.drawable.pill_off)
+            views.setInt(viewId, "setImageAlpha", if (active) 255 else 105)
+            views.setOnClickPendingIntent(viewId, selectOp(context, id, op))
         }
+        views.setViewVisibility(R.id.mode_pending, if (sending) View.VISIBLE else View.GONE)
 
         // Warmwasser erzwingen: rot umrandet = aktiv, blass = aus
         if (status?.tank == null) {
             views.setViewVisibility(R.id.force_toggle, View.GONE)
         } else {
-            val pending = storage.forcePendingUntil > System.currentTimeMillis()
-            val active = if (pending) storage.forcePendingTarget else status.forceHotWater
+            val forcePending = storage.forcePendingUntil > System.currentTimeMillis()
+            val active = if (forcePending) storage.forcePendingTarget else status.forceHotWater
             views.setViewVisibility(R.id.force_toggle, View.VISIBLE)
             views.setInt(R.id.force_toggle, "setBackgroundResource", if (active) R.drawable.pill_active else R.drawable.pill_off)
-            views.setInt(R.id.force_icon, "setImageAlpha", if (active) 255 else 110)
-            val forceSending = pending && storage.forceSentSeq == storage.forceSeq
-            views.setViewVisibility(R.id.force_pending, if (forceSending) View.VISIBLE else View.GONE)
+            views.setInt(R.id.force_toggle, "setImageAlpha", if (active) 255 else 105)
             views.setOnClickPendingIntent(R.id.force_toggle, broadcast(context, id, LwpWidgetProvider.ACTION_TOGGLE_FORCE))
         }
 
         // Legende nur, wenn das Diagramm trotzdem genug Höhe behält (sonst z.B. im Querformat ausblenden)
-        val showLegend = if (wide) true else heightDp - CHROME_DP - LEGEND_DP >= MIN_CHART_DP
+        val showLegend = if (wide) heightDp - 16 - 44 - 28 >= 80 else heightDp - CHROME_DP - LEGEND_DP >= MIN_CHART_DP
         views.setViewVisibility(R.id.legend, if (showLegend) View.VISIBLE else View.GONE)
 
         // Diagramm in genau der verfügbaren Größe zeichnen, damit nichts gestaucht wird
         val density = context.resources.displayMetrics.density
-        val chartWidthDp = max(120, if (wide) widthDp - 26 - 132 - 10 else widthDp - 28)
+        val chartWidthDp = max(120, if (wide) widthDp - 24 - 150 - 10 else widthDp - 24)
         val chartHeightDp = if (wide) {
-            max(60, heightDp - 18 - 4 - 28) // Kopfzeile mit Datum und Legende
+            max(60, heightDp - 16 - 44 - 4 - (if (showLegend) 26 else 0)) // Knopfzeile (+ Legende)
         } else {
             max(64, heightDp - CHROME_DP - (if (showLegend) LEGEND_DP else 0))
         }
         // Bitmaps in RemoteViews sind in der Größe begrenzt – Auflösung notfalls reduzieren
         val scale = min(density, 1000f / chartWidthDp)
-        val bitmap = ChartRenderer.render(
+        val chartUri = ChartFiles.uri(
+            context,
             day,
             (chartWidthDp * scale).roundToInt(),
             (chartHeightDp * scale).roundToInt(),
             scale,
             currentHour = if (offset == 0) LocalTime.now().hour else null,
         )
-        views.setImageViewBitmap(R.id.chart, bitmap)
+        views.setImageViewUri(R.id.chart, chartUri)
         views.setTextViewText(R.id.total, day?.let { String.format(Locale.US, "%.2f", it.total) } ?: "–")
 
         // Fußzeile
@@ -330,10 +316,10 @@ object WidgetRenderer {
 
         // Klicks
         views.setOnClickPendingIntent(R.id.refresh, broadcast(context, id, LwpWidgetProvider.ACTION_REFRESH))
-        views.setOnClickPendingIntent(R.id.footer, broadcast(context, id, LwpWidgetProvider.ACTION_REFRESH))
+        views.setOnClickPendingIntent(R.id.updated, broadcast(context, id, LwpWidgetProvider.ACTION_REFRESH))
         views.setOnClickPendingIntent(R.id.prev, broadcast(context, id, LwpWidgetProvider.ACTION_PREV))
         views.setOnClickPendingIntent(R.id.next, broadcast(context, id, LwpWidgetProvider.ACTION_NEXT))
-        // Tippen aufs Widget öffnet die Comfort-Cloud-App (falls installiert), der Name öffnet diese App
+        // Tippen aufs Widget öffnet die Comfort-Cloud-App (falls installiert)
         val ownApp = Intent(context, MainActivity::class.java)
         val comfortCloud = context.packageManager
             .getLaunchIntentForPackage(ComfortCloudClient.COMFORT_CLOUD_PACKAGE)
@@ -342,11 +328,26 @@ object WidgetRenderer {
             R.id.root,
             PendingIntent.getActivity(context, 0, comfortCloud ?: ownApp, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE),
         )
-        views.setOnClickPendingIntent(
-            R.id.title,
-            PendingIntent.getActivity(context, 1, ownApp, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE),
-        )
         return views
+    }
+
+    private val OP_BUTTONS = listOf(
+        Operation.HEAT_AND_WATER to R.id.op_heat_water,
+        Operation.HEAT to R.id.op_heat,
+        Operation.COOL to R.id.op_cool,
+        Operation.COOL_AND_WATER to R.id.op_cool_water,
+        Operation.WATER to R.id.op_water,
+    )
+
+    private fun selectOp(context: Context, id: Int, op: Operation): PendingIntent {
+        val intent = Intent(context, LwpWidgetProvider::class.java)
+            .setAction(LwpWidgetProvider.ACTION_SELECT_OP)
+            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+            .putExtra(LwpWidgetProvider.EXTRA_OP, op.name)
+        return PendingIntent.getBroadcast(
+            context, id * 10 + 6 + op.ordinal * 100_000, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     private fun broadcast(context: Context, id: Int, action: String): PendingIntent {
@@ -356,7 +357,6 @@ object WidgetRenderer {
         val requestCode = id * 10 + when (action) {
             LwpWidgetProvider.ACTION_REFRESH -> 1
             LwpWidgetProvider.ACTION_PREV -> 2
-            LwpWidgetProvider.ACTION_TOGGLE_DHW -> 4
             LwpWidgetProvider.ACTION_TOGGLE_FORCE -> 5
             else -> 3
         }
