@@ -19,6 +19,7 @@ object ChartRenderer {
     private const val COLOR_GRID = 0xFFE7E7E9.toInt()
     private const val COLOR_AXIS_TEXT = 0xFF6B6B70.toInt()
     private const val COLOR_SMALL_TEXT = 0xFF8A8A90.toInt()
+    const val COLOR_TEMP = 0xFF1C1C1E.toInt()
     private const val COLOR_EMPTY = 0xFFF1F1F3.toInt()
 
     /**
@@ -39,16 +40,18 @@ object ChartRenderer {
         }
         val grid = Paint().apply { color = COLOR_GRID; strokeWidth = max(1f, dp(0.8f)) }
 
-        // Ränder: links Platz für Achsenwerte, oben für "kWh", unten für Stunden
+        val hours = day?.hours.orEmpty()
+        val temps = hours.mapNotNull { h -> h.outdoorTemp?.let { h.hour to it } }
+
+        // Ränder: links Platz für Achsenwerte, oben für "kWh", unten für Stunden, rechts ggf. für °C
         val left = dp(26f)
-        val right = w - dp(6f)
+        val right = w - if (temps.isNotEmpty()) dp(24f) else dp(6f)
         val top = dp(16f)
         val bottom = h - dp(20f)
 
         c.drawText("kWh", left, top - dp(5f), small.apply { textSize = dp(10f) })
         small.textSize = dp(10f)
 
-        val hours = day?.hours.orEmpty()
         val maxValue = hours.maxOfOrNull { it.total } ?: 0.0
         val (yMax, step) = scale(maxValue)
 
@@ -108,6 +111,31 @@ object ChartRenderer {
             }
             c.restore()
         }
+        // Außentemperatur als schwarze Linie mit eigener Skala rechts (wie in der Panasonic-App)
+        if (temps.isNotEmpty()) {
+            val (tMin, tMax) = tempScale(temps.map { it.second })
+            fun ty(t: Double) = (bottom - (t - tMin) / (tMax - tMin) * (bottom - top)).toFloat()
+            val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = COLOR_TEMP; style = Paint.Style.STROKE; strokeWidth = dp(1.6f)
+                strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND
+            }
+            val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = COLOR_TEMP }
+            val path = Path()
+            var lastHour = -2
+            for ((hour, t) in temps.sortedBy { it.first }) {
+                val x = left + slot * hour + slot / 2f
+                // Lücken (fehlende Stunden) nicht verbinden
+                if (hour == lastHour + 1) path.lineTo(x, ty(t)) else path.moveTo(x, ty(t))
+                c.drawCircle(x, ty(t), dp(1.6f), dot)
+                lastHour = hour
+            }
+            c.drawPath(path, line)
+            val tl = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = COLOR_SMALL_TEXT; textSize = dp(10f); textAlign = Paint.Align.LEFT }
+            c.drawText("°C", right + dp(4f), top - dp(5f), tl)
+            c.drawText(fmtTemp(tMax), right + dp(4f), top + dp(3.5f), tl)
+            c.drawText(fmtTemp(tMin), right + dp(4f), bottom + dp(3.5f), tl)
+        }
+
         if (currentHour != null && hours.all { it.total <= 0.0 }) {
             c.drawText("Noch keine Verbrauchsdaten", (left + right) / 2, (top + bottom) / 2, axis)
         }
@@ -119,6 +147,16 @@ object ChartRenderer {
         }
         return bmp
     }
+
+    /** Temperaturskala: auf 5 °C gerundet, mindestens 10 °C Spanne. */
+    internal fun tempScale(values: List<Double>): Pair<Double, Double> {
+        var lo = kotlin.math.floor(values.min() / 5) * 5
+        var hi = ceil(values.max() / 5) * 5
+        if (hi - lo < 10) { val mid = (lo + hi) / 2; lo = kotlin.math.floor((mid - 5) / 5) * 5; hi = lo + 10 }
+        return lo to hi
+    }
+
+    private fun fmtTemp(t: Double) = t.toInt().toString()
 
     /** Achsenmaximum und Schrittweite: 2–4 „schöne“ Schritte, damit die Balken die Höhe gut nutzen. */
     internal fun scale(maxValue: Double): Pair<Double, Double> {

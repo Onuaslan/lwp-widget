@@ -331,6 +331,8 @@ class ComfortCloudClient(
                 heat = item.dbl("heatConsumption"),
                 cool = item.dbl("coolConsumption"),
                 hotWater = item.dbl("tankConsumption"),
+                // -255 o.ä. = keine Messung
+                outdoorTemp = (item["outdoorTemp"] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()?.takeIf { it in -60.0..60.0 },
             )
         }
         val byHour = hours.associateBy { it.hour }

@@ -180,6 +180,8 @@ data class HourConsumption(
     val heat: Double = 0.0,
     val cool: Double = 0.0,
     val hotWater: Double = 0.0,
+    /** Außentemperatur dieser Stunde (°C), falls die Cloud sie liefert. */
+    val outdoorTemp: Double? = null,
 ) {
     val total get() = heat + cool + hotWater
 }

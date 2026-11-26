@@ -130,9 +130,9 @@ class ComfortCloudClientTest {
         val c = client()
         val json = Json.parseToJsonElement(
             """{"historyDataList":[
-              {"dataTime":"2026112400","heatConsumption":0.8,"coolConsumption":null,"tankConsumption":0},
+              {"dataTime":"2026112400","heatConsumption":0.8,"coolConsumption":null,"tankConsumption":0,"outdoorTemp":-3},
               {"dataTime":"2026112411","heatConsumption":0.15,"coolConsumption":0,"tankConsumption":1.05},
-              {"dataTime":"2026112420","heatConsumption":-255,"coolConsumption":-255,"tankConsumption":-255}]}"""
+              {"dataTime":"2026112420","heatConsumption":-255,"coolConsumption":-255,"tankConsumption":-255,"outdoorTemp":-255}]}"""
         ).jsonObject
         val day = c.parseDayConsumption(java.time.LocalDate.of(2026, 11, 24), json)
         assertEquals(24, day.hours.size)
@@ -140,6 +140,8 @@ class ComfortCloudClientTest {
         assertEquals(1.05, day.hours[11].hotWater)
         assertEquals(0.0, day.hours[20].total)
         assertEquals(2.0, day.total, 1e-9)
+        assertEquals(-3.0, day.hours[0].outdoorTemp)
+        assertNull(day.hours[20].outdoorTemp)
 
         val s = c.parseStatus(HeatPump("HP1", "LWP"), Json.parseToJsonElement(STATUS_JSON).jsonObject)
         assertEquals(Activity.HOT_WATER, s.activity)

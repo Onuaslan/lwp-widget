@@ -19,7 +19,7 @@ import java.io.File
 object ChartFiles {
     fun uri(context: Context, day: DayConsumption?, w: Int, h: Int, scale: Float, currentHour: Int?): Uri {
         val dir = File(context.cacheDir, "charts").apply { mkdirs() }
-        val key = listOf(day?.date, day?.hours?.hashCode(), w, h, scale, currentHour).hashCode()
+        val key = listOf("v2", day?.date, day?.hours?.hashCode(), w, h, scale, currentHour).hashCode()
         val name = "chart_${Integer.toHexString(key)}.png"
         val file = File(dir, name)
         if (!file.exists()) {

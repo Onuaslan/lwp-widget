@@ -18,11 +18,23 @@ android {
         versionName = "1.$build"
     }
 
+    // Fester Schlüssel aus den Repo-Secrets: dann lässt sich jede neue Version einfach drüberinstallieren.
+    // Ohne Secrets (z.B. lokal) wird mit dem Debug-Schlüssel signiert.
+    val keystoreFile = System.getenv("SIGNING_KEYSTORE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (keystoreFile != null) {
+            create("fixed") {
+                storeFile = keystoreFile
+                storePassword = System.getenv("SIGNING_PASSWORD")
+                keyAlias = "lwp"
+                keyPassword = System.getenv("SIGNING_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Zum privaten Installieren reicht die Debug-Signatur.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("fixed") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {
