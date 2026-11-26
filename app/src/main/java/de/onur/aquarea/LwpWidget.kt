@@ -287,12 +287,16 @@ object WidgetRenderer {
 
         // Diagramm in genau der verfügbaren Größe zeichnen, damit nichts gestaucht wird
         val density = context.resources.displayMetrics.density
-        val chartWidthDp = max(120, if (wide) widthDp - 24 - 150 - 10 else widthDp - 24)
         val chartHeightDp = if (wide) {
             max(60, heightDp - 16 - 44 - 4 - (if (showLegend) 26 else 0)) // Knopfzeile (+ Legende)
         } else {
             max(64, heightDp - CHROME_DP - (if (showLegend) LEGEND_DP else 0))
         }
+        // Nie breiter als 2,6 × Höhe zeichnen, sonst wird das Diagramm flach in die Länge gezogen
+        val chartWidthDp = min(
+            max(120, if (wide) widthDp - 24 - 150 - 10 else widthDp - 24),
+            max(120, (chartHeightDp * 2.6f).roundToInt()),
+        )
         // Bitmaps in RemoteViews sind in der Größe begrenzt – Auflösung notfalls reduzieren
         val scale = min(density, 1000f / chartWidthDp)
         val chartUri = ChartFiles.uri(

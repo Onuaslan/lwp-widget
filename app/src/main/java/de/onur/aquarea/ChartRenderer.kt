@@ -53,7 +53,11 @@ object ChartRenderer {
         val (yMax, step) = scale(maxValue)
 
         // Gitterlinien + Achsenwerte
+        // bei wenig Höhe nur jeden 2. (3. …) Wert beschriften, damit sich nichts überlappt
+        val stepPx = (step / yMax * (bottom - top)).toFloat()
+        val labelEvery = if (stepPx >= dp(12f)) 1 else kotlin.math.ceil(dp(12f) / stepPx).toInt()
         var v = 0.0
+        var index = 0
         while (v <= yMax + 1e-9) {
             val y = (bottom - (v / yMax) * (bottom - top)).toFloat()
             c.drawLine(left, y, right, y, grid)
@@ -63,7 +67,7 @@ object ChartRenderer {
                 else -> v.toInt().toString()
             }
             small.textAlign = Paint.Align.RIGHT
-            c.drawText(label, left - dp(5f), y + dp(3.5f), small)
+            if (index++ % labelEvery == 0) c.drawText(label, left - dp(5f), y + dp(3.5f), small)
             small.textAlign = Paint.Align.LEFT
             v += step
         }
