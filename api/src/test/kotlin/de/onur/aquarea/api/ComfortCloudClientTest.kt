@@ -196,6 +196,34 @@ class ComfortCloudClientTest {
         assertTrue(e is ApiException && e.code == "1-0012", "got $e")
     }
 
+    @Test
+    fun `expired token is renewed once and a slow live query falls back to cached values`() {
+        val c = client()
+        val pump = HeatPump("HP1", "x")
+        var tokenErrors = 0
+        server.dispatcher.let { original ->
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    if (request.path == "/remote/v1/app/common/transfer") {
+                        val body = request.body.readUtf8()
+                        requests += request
+                        if (tokenErrors++ == 0) return MockResponse().setBody("""{"message":"Token expires"}""")
+                        // Live-Abfrage hängt (Pumpe schläft), zwischengespeicherte Werte kommen sofort
+                        if ("deviceDirect=1" in body) return MockResponse().setBody(STATUS_JSON)
+                            .setBodyDelay(ComfortCloudClient.DIRECT_TIMEOUT_SEC + 3, java.util.concurrent.TimeUnit.SECONDS)
+                        return MockResponse().setBody(STATUS_JSON)
+                    }
+                    return original.dispatch(request)
+                }
+            }
+        }
+        val started = System.currentTimeMillis()
+        val s = c.status(pump)
+        assertEquals(4, s.outdoorTemperature)
+        assertTrue(System.currentTimeMillis() - started < (ComfortCloudClient.DIRECT_TIMEOUT_SEC + 3) * 1000)
+        assertEquals(2, requests.count { it.path == "/oauth/token" }) // Login + Erneuerung
+    }
+
     companion object {
         const val STATUS_JSON = """{"status":{"operationStatus":1,"operationMode":1,"direction":2,"deiceStatus":0,
             "outdoorNow":4,"faultStatus":[],

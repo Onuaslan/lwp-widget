@@ -60,10 +60,7 @@ class LwpWidgetProvider : AppWidgetProvider() {
         val manager = AppWidgetManager.getInstance(context)
         val storage = Storage(context)
         when (intent.action) {
-            ACTION_REFRESH -> {
-                WidgetRenderer.render(context, manager, id, refreshing = true)
-                RefreshJob.runNow(context)
-            }
+            ACTION_REFRESH -> refreshDirect(context)
             ACTION_SELECT_OP -> {
                 val status = storage.status ?: return
                 val target = intent.getStringExtra(EXTRA_OP)?.let { runCatching { Operation.valueOf(it) }.getOrNull() } ?: return
@@ -131,7 +128,7 @@ class LwpWidgetProvider : AppWidgetProvider() {
                 WidgetRenderer.render(context, manager, id)
                 // fehlende Tage nachladen
                 if (storage.consumption(LocalDate.now().minusDays(offset.toLong()).toString()) == null) {
-                    RefreshJob.runNow(context)
+                    refreshDirect(context)
                 }
             }
         }
@@ -150,6 +147,44 @@ class LwpWidgetProvider : AppWidgetProvider() {
             } catch (_: InterruptedException) {
             } finally {
                 LwpWidgetProvider.renderAll(context)
+                result.finish()
+            }
+        }.start()
+    }
+
+    /**
+     * Aktualisieren sofort hier ausführen statt über den JobScheduler: Den verschiebt Android bei
+     * selten benutzten Apps teils um Stunden, dann stand nur „Aktualisiere …“ da.
+     */
+    private fun refreshDirect(context: Context) {
+        val storage = Storage(context)
+        if (!Refresher.running.compareAndSet(false, true)) {
+            LwpWidgetProvider.renderAll(context)
+            return
+        }
+        storage.refreshingSince = System.currentTimeMillis()
+        LwpWidgetProvider.renderAll(context)
+        val result = goAsync()
+        val worker = Thread {
+            try {
+                Refresher.run(context)
+            } finally {
+                storage.refreshingSince = 0
+                Refresher.running.set(false)
+                LwpWidgetProvider.renderAll(context)
+            }
+        }
+        Thread {
+            try {
+                worker.start()
+                worker.join(Refresher.MAX_WAIT_MS)
+                if (worker.isAlive) {
+                    // läuft im Hintergrund weiter; bis dahin eine klare Meldung statt endlos „Aktualisiere …“
+                    storage.lastError = "Panasonic antwortet nicht – bitte später nochmal tippen"
+                    storage.refreshingSince = 0
+                    LwpWidgetProvider.renderAll(context)
+                }
+            } finally {
                 result.finish()
             }
         }.start()
@@ -312,7 +347,7 @@ object WidgetRenderer {
 
         // Fußzeile
         val footer = when {
-            refreshing -> "Aktualisiere …"
+            refreshing || System.currentTimeMillis() - storage.refreshingSince < Refresher.MAX_WAIT_MS -> "Aktualisiere …"
             storage.lastError != null -> "⚠ ${storage.lastError}"
             storage.lastRefresh > 0 ->
                 "Stand " + SimpleDateFormat("HH:mm", Locale.GERMANY).format(Date(storage.lastRefresh))
@@ -380,18 +415,12 @@ class RefreshJob : JobService() {
 
     override fun onStartJob(params: JobParameters): Boolean {
         val thread = Thread {
-            val storage = Storage(this)
-            val repo = Repository.get(this)
-            val offsets = LwpWidgetProvider.widgetIds(this).map { storage.dayOffset(it) }.toSet() + 0
-            val ok = repo.refresh(offsets) != null
-            // Ein Umschaltbefehl gilt als erledigt, sobald frische Daten da sind (oder nach 60 s)
-            if (ok || params.jobId == AFTER_COMMAND_ID) {
-                // nur abschließen, was schon gesendet wurde – eine laufende Auswahl bleibt stehen
-                if (storage.opSentSeq == storage.opSeq) {
-                    storage.dhwPendingUntil = 0
-                    storage.pendingOperation = null
+            if (Refresher.running.compareAndSet(false, true)) {
+                try {
+                    Refresher.run(this, afterCommand = params.jobId == AFTER_COMMAND_ID)
+                } finally {
+                    Refresher.running.set(false)
                 }
-                if (storage.forceSentSeq == storage.forceSeq) storage.forcePendingUntil = 0
             }
             LwpWidgetProvider.renderAll(this)
             workers.remove(params.jobId)
@@ -449,6 +478,27 @@ class RefreshJob : JobService() {
                     .setOverrideDeadline(0)
                     .build()
             )
+        }
+    }
+}
+
+/** Gemeinsamer Abruf für Knopf, Blättern und Hintergrund-Jobs – immer nur einer gleichzeitig. */
+object Refresher {
+    const val MAX_WAIT_MS = 50_000L
+    val running = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun run(context: Context, afterCommand: Boolean = false) {
+        val storage = Storage(context)
+        val offsets = LwpWidgetProvider.widgetIds(context).map { storage.dayOffset(it) }.toSet() + 0
+        val ok = Repository.get(context).refresh(offsets) != null
+        // Ein Umschaltbefehl gilt als erledigt, sobald frische Daten da sind (oder nach 60 s)
+        if (ok || afterCommand) {
+            // nur abschließen, was schon gesendet wurde – eine laufende Auswahl bleibt stehen
+            if (storage.opSentSeq == storage.opSeq) {
+                storage.dhwPendingUntil = 0
+                storage.pendingOperation = null
+            }
+            if (storage.forceSentSeq == storage.forceSeq) storage.forcePendingUntil = 0
         }
     }
 }

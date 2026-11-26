@@ -60,7 +60,8 @@ class ComfortCloudClient(
         .followSslRedirects(false)
         .cookieJar(cookies)
         .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .callTimeout(25, TimeUnit.SECONDS)
         .build()
 
     @Volatile
@@ -279,9 +280,14 @@ class ComfortCloudClient(
 
     fun status(pump: HeatPump): HeatPumpStatus {
         val json = try {
-            transfer("/remote/v1/api/devices?gwid=${pump.guid}&deviceDirect=1", "GET", null)
+            // Live-Abfrage beim Gerät: kurz halten, schläft die Pumpe, antwortet sie oft gar nicht
+            transfer("/remote/v1/api/devices?gwid=${pump.guid}&deviceDirect=1", "GET", null, timeoutSec = DIRECT_TIMEOUT_SEC)
         } catch (e: NeedsLoginException) {
             throw e
+        } catch (e: java.io.IOException) {
+            if (Thread.currentThread().isInterrupted) throw e
+            // Zeitüberschreitung – zwischengespeicherte Werte nehmen
+            transfer("/remote/v1/api/devices?gwid=${pump.guid}&deviceDirect=0", "GET", null)
         } catch (_: ComfortCloudException) {
             // Live-Abfrage fehlgeschlagen (Gerät schläft o.ä.) – zwischengespeicherte Werte nehmen
             transfer("/remote/v1/api/devices?gwid=${pump.guid}&deviceDirect=0", "GET", null)
@@ -449,13 +455,13 @@ class ComfortCloudClient(
 
     // ------------------------------------------------------------------ HTTP-Helfer
 
-    private fun transfer(apiName: String, method: String, bodyParam: JsonObject?): JsonElement {
+    private fun transfer(apiName: String, method: String, bodyParam: JsonObject?, timeoutSec: Long? = null): JsonElement {
         val body = buildJsonObject {
             put("apiName", apiName)
             put("requestMethod", method)
             if (bodyParam != null) put("bodyParam", bodyParam)
         }
-        return accRequest("POST", "$baseAcc/remote/v1/app/common/transfer", body)
+        return accRequest("POST", "$baseAcc/remote/v1/app/common/transfer", body, timeoutSec = timeoutSec)
     }
 
     private fun accRequest(
@@ -463,8 +469,11 @@ class ComfortCloudClient(
         url: String,
         body: JsonObject?,
         extraHeaders: Map<String, String> = emptyMap(),
+        timeoutSec: Long? = null,
     ): JsonElement {
+        val client = timeoutSec?.let { http.newBuilder().callTimeout(it, TimeUnit.SECONDS).readTimeout(it, TimeUnit.SECONDS).build() } ?: http
         var session = session()
+        var renewed = false
         var lastError: Exception? = null
         repeat(3) {
             val request = Request.Builder().url(url)
@@ -472,7 +481,7 @@ class ComfortCloudClient(
                 .apply { extraHeaders.forEach { (k, v) -> header(k, v) } }
                 .method(method, body?.toString()?.jsonBody())
                 .build()
-            http.newCall(request).execute().use { r ->
+            client.newCall(request).execute().use { r ->
                 val text = r.body?.string().orEmpty()
                 when {
                     isOutdatedVersion(r.code, text) -> {
@@ -486,7 +495,16 @@ class ComfortCloudClient(
                     !r.isSuccessful -> throw ComfortCloudException("HTTP ${r.code} bei /${url.toHttpUrl().encodedPath.trimStart('/')} (App-Version ${currentAppVersion()}): ${text.take(300)}")
                     else -> {
                         val json = if (text.isBlank()) JsonObject(emptyMap()) else Json.parseToJsonElement(text)
-                        checkApiErrors(json)
+                        try {
+                            checkApiErrors(json)
+                        } catch (e: NeedsLoginException) {
+                            // "Token expires": Sitzung einmal erneuern und nochmal versuchen
+                            if (renewed) throw e
+                            renewed = true
+                            session = session(forceRefresh = true)
+                            lastError = e
+                            return@use
+                        }
                         return json
                     }
                 }
@@ -610,6 +628,8 @@ class ComfortCloudClient(
     }
 
     companion object {
+        /** Wartezeit für die Live-Abfrage beim Gerät, danach werden zwischengespeicherte Werte genommen. */
+        const val DIRECT_TIMEOUT_SEC = 12L
         const val BASE_AUTH = "https://authglb.digital.panasonic.com"
         const val BASE_ACC = "https://accsmart.panasonic.com"
         const val APP_CLIENT_ID = "Xmy6xIYIitMxngjB2rHvlm6HSDNnaMJx"

@@ -101,6 +101,11 @@ class Storage(context: Context) : SessionStore {
         get() = prefs.getLong("force_sent_seq", -1)
         set(v) = prefs.edit().putLong("force_sent_seq", v).commit().let { }
 
+    /** Seit wann ein Abruf läuft (Unix-ms, 0 = keiner). */
+    var refreshingSince: Long
+        get() = prefs.getLong("refreshing_since", 0)
+        set(v) = prefs.edit().putLong("refreshing_since", v).apply()
+
     /** Die Betriebsart, auf die gerade umgeschaltet wird. */
     var pendingOperation: String?
         get() = prefs.getString("pending_op", null)
