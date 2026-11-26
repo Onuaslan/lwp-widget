@@ -13,12 +13,15 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.os.PersistableBundle
 import android.util.SizeF
 import android.view.View
 import android.widget.RemoteViews
 import de.onur.aquarea.api.Activity
 import de.onur.aquarea.api.ComfortCloudClient
+import de.onur.aquarea.api.Operation
 import de.onur.aquarea.api.activity
+import de.onur.aquarea.api.operation
 import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.LocalTime
@@ -61,6 +64,15 @@ class LwpWidgetProvider : AppWidgetProvider() {
                 WidgetRenderer.render(context, manager, id, refreshing = true)
                 RefreshJob.runNow(context)
             }
+            ACTION_TOGGLE_DHW -> {
+                val status = storage.status ?: return
+                if (storage.dhwPendingUntil > System.currentTimeMillis()) return // läuft schon
+                val target = status.operation.next
+                storage.dhwPendingUntil = System.currentTimeMillis() + 60_000
+                storage.pendingOperation = target.name
+                LwpWidgetProvider.renderAll(context)
+                RefreshJob.setOperation(context, target)
+            }
             ACTION_PREV, ACTION_NEXT -> {
                 val delta = if (intent.action == ACTION_PREV) 1 else -1
                 val offset = (storage.dayOffset(id) + delta).coerceIn(0, MAX_DAYS_BACK)
@@ -78,6 +90,7 @@ class LwpWidgetProvider : AppWidgetProvider() {
         const val ACTION_REFRESH = "de.onur.aquarea.REFRESH"
         const val ACTION_PREV = "de.onur.aquarea.PREV_DAY"
         const val ACTION_NEXT = "de.onur.aquarea.NEXT_DAY"
+        const val ACTION_TOGGLE_DHW = "de.onur.aquarea.TOGGLE_DHW"
         const val MAX_DAYS_BACK = 13
 
         fun widgetIds(context: Context): IntArray =
@@ -162,6 +175,23 @@ object WidgetRenderer {
             }
         )
 
+        // Betriebsart-Knopf wie am Bedienpanel: Heizen + WW / nur Heizen / nur WW.
+        // Nach dem Tippen zeigt er sofort die neue Stufe mit „…“, bis die Pumpe sie bestätigt.
+        if (status == null || (status.tank == null && status.zones.isEmpty())) {
+            views.setViewVisibility(R.id.dhw_toggle, View.GONE)
+        } else {
+            val pending = storage.dhwPendingUntil > System.currentTimeMillis()
+            val shown = (if (pending) storage.pendingOperation?.let { runCatching { Operation.valueOf(it) }.getOrNull() } else null)
+                ?: status.operation
+            views.setViewVisibility(R.id.dhw_toggle, View.VISIBLE)
+            views.setViewVisibility(R.id.mode_heat, if (shown.heating) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.mode_water, if (shown.hotWater) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.mode_plus, if (shown.heating && shown.hotWater) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.mode_pending, if (pending || shown == Operation.NONE) View.VISIBLE else View.GONE)
+            views.setTextViewText(R.id.mode_pending, if (pending) "…" else "Aus")
+            views.setOnClickPendingIntent(R.id.dhw_toggle, broadcast(context, id, LwpWidgetProvider.ACTION_TOGGLE_DHW))
+        }
+
         // Legende nur, wenn das Diagramm trotzdem genug Höhe behält (sonst z.B. im Querformat ausblenden)
         val showLegend = if (wide) heightDp - 18 - 26 >= 90 else heightDp - CHROME_DP - LEGEND_DP >= MIN_CHART_DP
         views.setViewVisibility(R.id.legend, if (showLegend) View.VISIBLE else View.GONE)
@@ -224,6 +254,7 @@ object WidgetRenderer {
         val requestCode = id * 10 + when (action) {
             LwpWidgetProvider.ACTION_REFRESH -> 1
             LwpWidgetProvider.ACTION_PREV -> 2
+            LwpWidgetProvider.ACTION_TOGGLE_DHW -> 4
             else -> 3
         }
         return PendingIntent.getBroadcast(
@@ -241,8 +272,20 @@ class RefreshJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         worker = Thread {
             val storage = Storage(this)
+            val repo = Repository.get(this)
+            val op = params.extras.getString(EXTRA_OPERATION)?.let { runCatching { Operation.valueOf(it) }.getOrNull() }
+            if (op != null) {
+                // Betriebsart setzen, danach frischen Status holen (control() lädt neu)
+                try {
+                    repo.control { c, p, s -> c.setHeatingAndHotWater(p, s, op.heating, op.hotWater) }
+                } catch (e: Exception) {
+                    storage.lastError = "Umschalten fehlgeschlagen: " + (e.message ?: e.javaClass.simpleName)
+                }
+                storage.dhwPendingUntil = 0
+                storage.pendingOperation = null
+            }
             val offsets = LwpWidgetProvider.widgetIds(this).map { storage.dayOffset(it) }.toSet() + 0
-            Repository.get(this).refresh(offsets)
+            repo.refresh(offsets)
             LwpWidgetProvider.renderAll(this)
             jobFinished(params, false)
         }.apply { start() }
@@ -257,6 +300,19 @@ class RefreshJob : JobService() {
     companion object {
         private const val PERIODIC_ID = 1001
         private const val ONE_SHOT_ID = 1002
+        private const val DHW_ID = 1003
+        private const val EXTRA_OPERATION = "operation"
+
+        /** Betriebsart im Hintergrund setzen. */
+        fun setOperation(context: Context, operation: Operation) {
+            context.getSystemService(JobScheduler::class.java).schedule(
+                JobInfo.Builder(DHW_ID, ComponentName(context, RefreshJob::class.java))
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                    .setOverrideDeadline(0)
+                    .setExtras(PersistableBundle().apply { putString(EXTRA_OPERATION, operation.name) })
+                    .build()
+            )
+        }
 
         fun schedulePeriodic(context: Context) {
             val scheduler = context.getSystemService(JobScheduler::class.java)

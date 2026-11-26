@@ -149,6 +149,22 @@ class ComfortCloudClientTest {
     }
 
     @Test
+    fun `operation cycles like the control panel and is sent as zone and tank status`() {
+        val c = client()
+        val s = c.parseStatus(HeatPump("HP1", "LWP"), Json.parseToJsonElement(STATUS_JSON).jsonObject)
+        assertEquals(Operation.HEAT_AND_WATER, s.operation)
+        assertEquals(Operation.HEAT_ONLY, s.operation.next)
+        assertEquals(Operation.WATER_ONLY, Operation.HEAT_ONLY.next)
+        assertEquals(Operation.HEAT_AND_WATER, Operation.WATER_ONLY.next)
+
+        c.setHeatingAndHotWater(HeatPump("HP1", "LWP"), s, heating = false, hotWater = true)
+        val body = Json.parseToJsonElement(requests.last { it.path == "/remote/v1/app/common/transfer" }.body.readUtf8()).jsonObject
+        val param = body["bodyParam"]!!.jsonObject
+        assertEquals("[{\"zoneId\":1,\"operationStatus\":0}]", param["zoneStatus"].toString())
+        assertEquals("{\"operationStatus\":1}", param["tankStatus"].toString())
+    }
+
+    @Test
     fun `api errors in the message field are raised`() {
         val c = client()
         val pump = HeatPump("HP1", "x")

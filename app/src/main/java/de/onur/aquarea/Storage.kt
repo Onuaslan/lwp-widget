@@ -74,6 +74,16 @@ class Storage(context: Context) : SessionStore {
         get() = prefs.getLong(KEY_REFRESHED, 0)
         set(v) = prefs.edit().putLong(KEY_REFRESHED, v).apply()
 
+    /** Bis wann ein Warmwasser-Befehl als „läuft“ gilt (Unix-ms). */
+    var dhwPendingUntil: Long
+        get() = prefs.getLong("dhw_pending", 0)
+        set(v) = prefs.edit().putLong("dhw_pending", v).apply()
+
+    /** Die Betriebsart, auf die gerade umgeschaltet wird. */
+    var pendingOperation: String?
+        get() = prefs.getString("pending_op", null)
+        set(v) = prefs.edit().putString("pending_op", v).apply()
+
     /** Wie viele Tage das Widget zurückblättert (0 = heute). */
     fun dayOffset(widgetId: Int) = prefs.getInt("offset_$widgetId", 0)
     fun setDayOffset(widgetId: Int, offset: Int) = prefs.edit().putInt("offset_$widgetId", offset).apply()

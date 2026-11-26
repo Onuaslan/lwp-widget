@@ -133,6 +133,34 @@ val HeatPumpStatus.activity: Activity
         else -> Activity.IDLE
     }
 
+/** Was eingeschaltet ist – wie die Betriebsart-Taste am Bedienpanel. */
+enum class Operation(val label: String, val heating: Boolean, val hotWater: Boolean) {
+    HEAT_AND_WATER("Heizen + Warmwasser", true, true),
+    HEAT_ONLY("Nur Heizen", true, false),
+    WATER_ONLY("Nur Warmwasser", false, true),
+    NONE("Aus", false, false);
+
+    /** Nächste Stufe beim Tippen: Heizen + WW → nur Heizen → nur WW → Heizen + WW */
+    val next: Operation
+        get() = when (this) {
+            HEAT_AND_WATER -> HEAT_ONLY
+            HEAT_ONLY -> WATER_ONLY
+            WATER_ONLY, NONE -> HEAT_AND_WATER
+        }
+}
+
+val HeatPumpStatus.operation: Operation
+    get() {
+        val heating = zones.any { it.on }
+        val water = tank?.on == true
+        return when {
+            heating && water -> Operation.HEAT_AND_WATER
+            heating -> Operation.HEAT_ONLY
+            water -> Operation.WATER_ONLY
+            else -> Operation.NONE
+        }
+    }
+
 /** Verbrauch einer Stunde in kWh. */
 @Serializable
 data class HourConsumption(

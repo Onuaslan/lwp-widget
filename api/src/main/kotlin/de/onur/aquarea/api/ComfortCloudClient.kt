@@ -387,6 +387,22 @@ class ComfortCloudClient(
         })
     }
 
+    /**
+     * Heizen (alle Zonen) und Warmwasser gemeinsam ein-/ausschalten – wie die Tasten am Bedienpanel:
+     * Heizen + Warmwasser, nur Heizen oder nur Warmwasser.
+     */
+    fun setHeatingAndHotWater(pump: HeatPump, current: HeatPumpStatus, heating: Boolean, hotWater: Boolean) {
+        transfer("/remote/v1/api/devices", "POST", buildJsonObject {
+            put("gwid", pump.guid)
+            put("zoneStatus", buildJsonArray {
+                current.zones.forEach { z ->
+                    add(buildJsonObject { put("zoneId", z.id); put("operationStatus", if (heating) 1 else 0) })
+                }
+            })
+            put("tankStatus", buildJsonObject { put("operationStatus", if (hotWater) 1 else 0) })
+        })
+    }
+
     /** Modus (Heizen/Kühlen/Auto) setzen und dabei alle Zonen einschalten. */
     fun setMode(pump: HeatPump, current: HeatPumpStatus, mode: ModeCommand) {
         transfer("/remote/v1/api/devices", "POST", buildJsonObject {
