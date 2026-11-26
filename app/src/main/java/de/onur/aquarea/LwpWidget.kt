@@ -202,7 +202,7 @@ object WidgetRenderer {
                 options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
             }
             if (!sizes.isNullOrEmpty()) {
-                val distinct = sizes.distinctBy { it.width.roundToInt() to it.height.roundToInt() }.take(4)
+                val distinct = sizes.distinctBy { it.width.roundToInt() to it.height.roundToInt() }.take(16)
                 val map = distinct.associateWith { buildViews(context, id, it.width.roundToInt(), it.height.roundToInt(), refreshing) }
                 manager.updateAppWidget(id, RemoteViews(map))
                 return
@@ -220,7 +220,9 @@ object WidgetRenderer {
     private fun buildViews(context: Context, id: Int, widthDp: Int, heightDp: Int, refreshing: Boolean): RemoteViews {
         val storage = Storage(context)
         // Flach und breit (z.B. Querformat): Live-Werte links, Diagramm rechts
-        val wide = heightDp < 230 && widthDp >= heightDp * 1.7f
+        // Querformat nur, wenn rechts alle Knöpfe ganz hineinpassen (sonst würde abgeschnitten)
+        val buttonsDp = (if (storage.status?.coolingSupported == true) 5 else 3) * 46 + 56
+        val wide = heightDp < 230 && widthDp >= heightDp * 1.7f && widthDp - 24 - 150 - 10 >= buttonsDp
         val views = RemoteViews(context.packageName, if (wide) R.layout.widget_lwp_wide else R.layout.widget_lwp)
         val status = storage.status
         val offset = storage.dayOffset(id)

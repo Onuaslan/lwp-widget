@@ -268,7 +268,8 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Warmwasser"
+                android:maxLines="1"
+                    android:text="Warmwasser"
                 android:textColor="@color/text_primary"
                 android:textSize="11sp" />
         </LinearLayout>
@@ -294,7 +295,8 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Heizen"
+                android:maxLines="1"
+                    android:text="Heizen"
                 android:textColor="@color/text_primary"
                 android:textSize="11sp" />
         </LinearLayout>
@@ -319,7 +321,8 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Kühlen"
+                android:maxLines="1"
+                    android:text="Kühlen"
                 android:textColor="@color/text_primary"
                 android:textSize="11sp" />
         </LinearLayout>
